@@ -1,0 +1,37 @@
+[
+  {
+    "start": 0.0,
+    "end": 12.8,
+    "text": "Three of how Reddit is selling their data to Google for AI scraping, how Automatic is selling all the WordPress and Tumblr data, and now how Financial Times is selling their data to OpenAI."
+  },
+  {
+    "start": 12.8,
+    "end": 26.88,
+    "text": "And this doesn't sound right, right? Because we've been told that these AI companies are taking all this data and basically invalidating the data sources they're coming from by sharing the data, so you don't get to the source. So what exactly is happening here?"
+  },
+  {
+    "start": 26.88,
+    "end": 47.78,
+    "text": "This is more complicated than it sounds. You see, there are two different things these AI companies can do with the data. One is use it for training, you know, building new models based on the data, and they're definitely doing that in some respects. But the other one is to use the data as a grounded source. And that's really interesting. So let me explain."
+  },
+  {
+    "start": 47.78,
+    "end": 120.76,
+    "text": "Here's a very simplified drawing of what happens when you use an AI system like ChatGPT. You put in a prompt, the prompt goes to the AI system, and the AI system creates a completion. This is the response that comes out of the AI system. The challenge with this model is if you ask the AI system something that exists within its training data, it's likely to put together something that looks like an answer that's correct, but it's just putting together tokens to make up something that looks like language. It's not actually answering your question, so there's no guarantee that the answer will be correct."
+  },
+  {
+    "start": 120.76,
+    "end": 207.2,
+    "text": "The way we solve this is by adding a grounded source. So when you ask the AI system a question, the AI system sends off the question to a database with information, and then matching information gets sent back into the AI system. It combines that with your request, and you get a more grounded response. It's actually grounded in truth. And this is what they're going to be doing with these different media organizations. Instead of the AI system just straight-up trying to answer the question, it'll go to a grounded source to get some information first and use that to process an answer in the same way that when you're working with ChatGPT, if you ask it to write an article, it'll write an okay article, but if you write the start starting point of an article and ask it to help you make the language better, it'll do a much better job."
+  },
+  {
+    "start": 207.2,
+    "end": 236.26,
+    "text": "This process is called retrieval-augmented generation because it retrieves information, and then it augments that information and gives it back to you. And doing this, we can take things one step further and introduce what's called a semantic cache, so that when you put in a prompt, we can go over to the grounded source, get some information, put that back in the AI, and then when the completion comes out, we'll send it into the cache, so that next time we can bypass the AI entirely."
+  },
+  {
+    "start": 236.26,
+    "end": 255.48,
+    "text": "This is the direction AI is currently going and will be going in the foreseeable future. Instead of using the AI system to try to answer the question directly, have the AI system ground itself in real data and use RAG, retrieval-augmented generation, to pull real data out and then augment it in its response. Hope that helps."
+  }
+]

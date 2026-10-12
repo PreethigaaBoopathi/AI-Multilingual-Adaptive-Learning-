@@ -1,0 +1,112 @@
+[
+  {
+    "start": 0.0,
+    "end": 12.199,
+    "text": "of how Reddit is selling their data to Google for AI scraping, how Automatic is selling all the WordPress and Tumblr data, and now how Financial Times is selling their data to Open AI."
+  },
+  {
+    "start": 12.199,
+    "end": 24.589,
+    "text": "And this doesn't sound right, right? Because we've been told that these AI companies are taking all this data and basically invalidating the data sources they're coming from by sharing the data so you don't get to the source."
+  },
+  {
+    "start": 24.589,
+    "end": 26.699,
+    "text": "So what exactly is happening here?"
+  },
+  {
+    "start": 26.699,
+    "end": 28.799,
+    "text": "This is more complicated than it sounds."
+  },
+  {
+    "start": 28.799,
+    "end": 33.199,
+    "text": "You see, there are two different things these AI companies can do with the data."
+  },
+  {
+    "start": 33.199,
+    "end": 39.999,
+    "text": "One is use it for training, you know, building new models based on the data and they're definitely doing that in some respect."
+  },
+  {
+    "start": 39.999,
+    "end": 46.599,
+    "text": "But the other one is to use the data as a grounded source, and that's really interesting."
+  },
+  {
+    "start": 46.599,
+    "end": 53.079,
+    "text": "So let me explain. Here's a very simplified drawing of what happens when you use a AI system like ChatGPT."
+  },
+  {
+    "start": 53.079,
+    "end": 58.269,
+    "text": "You put in a prompt, the prompt goes to the AI system and the AI system creates a completion."
+  },
+  {
+    "start": 58.269,
+    "end": 60.309,
+    "text": "This is the response that comes out of the AI system."
+  },
+  {
+    "start": 60.309,
+    "end": 68.369,
+    "text": "The challenge with this model is if you ask the AI system something that exists within its training data, it's likely to put together something that looks like an answer that's correct."
+  },
+  {
+    "start": 68.369,
+    "end": 78.439,
+    "text": "But it's just putting together tokens to make up something that looks like language. It's not actually answering your question, so there's no guarantee that the answer will be correct."
+  },
+  {
+    "start": 78.439,
+    "end": 84.459,
+    "text": "The way we solve this is by adding a grounded source. So when you ask the AI system a question,"
+  },
+  {
+    "start": 84.459,
+    "end": 94.619,
+    "text": "the AI system sends off the question to a database with information, and then matching information gets sent back into the AI system."
+  },
+  {
+    "start": 94.619,
+    "end": 101.449,
+    "text": "It combines that with your request and you get a more grounded response that's actually grounded in truth."
+  },
+  {
+    "start": 101.449,
+    "end": 115.549,
+    "text": "And this is what they're going to be doing with these different media organizations instead of the AI system just straight up trying to answer the question, it'll go to a grounded source to get some information first and use that to process an answer."
+  },
+  {
+    "start": 115.549,
+    "end": 127.359,
+    "text": "In the same way that when you're working with ChatGPT, if you ask it to write an article, it'll write a, okay article, but if you write the startup starting point of an article and ask it to help you make the language better, it'll do a much better job."
+  },
+  {
+    "start": 127.359,
+    "end": 136.219,
+    "text": "This process is called retrieval augmented generation, because it retrieves information and then it augments that information and gives it back to you."
+  },
+  {
+    "start": 136.219,
+    "end": 141.679,
+    "text": "And doing this, we can take things one step further and introduce what's called a semantic cache."
+  },
+  {
+    "start": 141.679,
+    "end": 154.519,
+    "text": "So that when you put in a prompt, we can go over to the grounded source, get some information, put that back in the AI, and then when the completion comes out, we'll set it into the cache, so that next time we can bypass the AI entirely."
+  },
+  {
+    "start": 154.519,
+    "end": 165.659,
+    "text": "This is the direction AI is currently going and will be going in the foreseeable future, instead of using the AI system to try to answer the question directly, have the AI system ground itself in real data."
+  },
+  {
+    "start": 165.659,
+    "end": 172.939,
+    "text": "And use rag retrieval augmented generation to pull real data out and then augment it in its response. Hope that helps."
+  }
+]

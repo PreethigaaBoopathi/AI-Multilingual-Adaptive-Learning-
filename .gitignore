@@ -1,0 +1,35 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node dependencies
+node_modules/
+
+# Editor settings
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Private data and uploaded files
+uploads/
+user_uploads/
+
+# Local databases
+*.sqlite3
+# Local databases
+*.db
+*.sqlite3
+
+# Uploaded documents
+*.pdf
+*.pptx
+*.mp4
