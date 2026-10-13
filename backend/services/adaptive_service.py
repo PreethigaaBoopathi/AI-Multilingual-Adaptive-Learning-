@@ -30,7 +30,7 @@ def get_personalized_recommendation(
         weak_topic = active_misconceptions[0].get("concept_name", "Second Normal Form (2NF)")
     elif adaptive_perf.get("weak_concepts"):
         weak_topic = adaptive_perf["weak_concepts"][0]
-    elif perf["weak_topics"]:
+    elif perf.get("weak_topics"):
         weak_topic = perf["weak_topics"][0]
     else:
         weak_topic = "Second Normal Form (2NF)"

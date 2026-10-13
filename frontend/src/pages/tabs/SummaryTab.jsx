@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, Sparkles, CheckCircle2, Bookmark, 
-  RotateCw, ShieldCheck, Languages, ArrowRight, AlertCircle 
+  RotateCw, ShieldCheck, Languages, ArrowRight, AlertCircle,
+  BrainCircuit
 } from 'lucide-react';
 import { textbookAPI } from '../../services/api';
 import { useTextbook } from '../../context/TextbookContext';
@@ -12,30 +13,76 @@ export const SummaryTab = () => {
   const [summaryData, setSummaryData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [loadingStep, setLoadingStep] = useState(0);
 
-  const loadSummary = async () => {
+  // In-memory cache to make tab & language toggles instantaneous
+  const cacheRef = useRef({});
+  const activeReqIdRef = useRef(0);
+
+  const getCacheKey = () => {
+    if (!activeTextbook) return null;
+    return `${activeTextbook.id}_${activeChapter?.id || 'all'}_${activeSection?.id || 'all'}_${language}`;
+  };
+
+  const loadSummary = async (forceRefresh = false) => {
     if (!activeTextbook) return;
+
+    const cacheKey = getCacheKey();
+    if (!forceRefresh && cacheKey && cacheRef.current[cacheKey]) {
+      setSummaryData(cacheRef.current[cacheKey]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    const currentReqId = ++activeReqIdRef.current;
     try {
       setLoading(true);
       setError(null);
+      setLoadingStep(0);
+
+      const stepTimer1 = setTimeout(() => setLoadingStep(1), 1200);
+      const stepTimer2 = setTimeout(() => setLoadingStep(2), 3500);
+
       const data = await textbookAPI.summarize(
         activeTextbook.id,
         activeChapter ? activeChapter.id : null,
         activeSection ? activeSection.id : null,
         language
       );
-      setSummaryData(data);
+
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+
+      if (activeReqIdRef.current === currentReqId) {
+        if (cacheKey) {
+          cacheRef.current[cacheKey] = data;
+        }
+        setSummaryData(data);
+      }
     } catch (err) {
-      console.error('Error generating summary:', err);
-      setError('Unable to load summary. Using grounded local textbook content.');
+      if (activeReqIdRef.current === currentReqId) {
+        console.error('Error generating summary:', err);
+        setError('Unable to load live summary. Please check your backend connection or retry.');
+      }
     } finally {
-      setLoading(false);
+      if (activeReqIdRef.current === currentReqId) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadSummary();
+    loadSummary(false);
   }, [activeTextbook, activeChapter, activeSection, language]);
+
+  const loadingSteps = [
+    'Reading textbook chunks & curriculum context...',
+    'Synthesizing pedagogical definitions & high-yield exam takeaways...',
+    language === 'ta' 
+      ? 'Finalizing fluent Tamil translation & bilingual glossary alignment...' 
+      : 'Assembling grounded summary & quick revision takeaways...'
+  ];
 
   return (
     <div className="space-y-6 text-slate-900 dark:text-slate-100">
@@ -57,9 +104,10 @@ export const SummaryTab = () => {
 
         <div className="flex items-center space-x-2.5">
           <button
-            onClick={loadSummary}
+            onClick={() => loadSummary(true)}
             disabled={loading}
             className="inline-flex items-center justify-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow-sm transition-all"
+            title="Re-synthesize summary"
           >
             <RotateCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>{loading ? 'Synthesizing...' : 'Generate Summary'}</span>
@@ -68,9 +116,29 @@ export const SummaryTab = () => {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center space-y-3">
-          <div className="w-10 h-10 border-3 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Reading textbook chunks & structuring summary...</p>
+        <div className="py-14 px-6 max-w-xl mx-auto text-center space-y-4">
+          <div className="relative w-12 h-12 mx-auto">
+            <div className="absolute inset-0 rounded-full border-3 border-indigo-100 dark:border-indigo-950/80" />
+            <div className="w-12 h-12 border-3 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin" />
+            <BrainCircuit className="w-5 h-5 text-indigo-600 dark:text-indigo-400 absolute inset-0 m-auto" />
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+              {loadingSteps[loadingStep] || loadingSteps[0]}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Grounded synthesis in progress • {language === 'ta' ? 'தமிழ் பயன்முறை' : 'English academic mode'}
+            </p>
+          </div>
+
+          {/* Micro Progress Bar */}
+          <div className="w-48 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mx-auto overflow-hidden">
+            <div 
+              className="h-full bg-indigo-600 dark:bg-indigo-400 rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${Math.min(100, (loadingStep + 1) * 33)}%` }}
+            />
+          </div>
         </div>
       ) : summaryData ? (
         <div className="space-y-6 animate-fade-in">
@@ -96,7 +164,7 @@ export const SummaryTab = () => {
                   <span>Key Concepts & Definitions</span>
                 </div>
                 <ul className="space-y-2.5">
-                  {summaryData.key_concepts.map((concept, idx) => (
+                  {(summaryData.key_concepts || []).map((concept, idx) => (
                     <li key={idx} className="flex items-start space-x-2 text-xs text-slate-700 dark:text-slate-300">
                       <span className="w-5 h-5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold flex items-center justify-center flex-shrink-0 text-2xs mt-0.5 border border-emerald-200 dark:border-emerald-800/50">
                         {idx + 1}
@@ -116,7 +184,7 @@ export const SummaryTab = () => {
                   <span>Important Exam & Review Points</span>
                 </div>
                 <ul className="space-y-2.5">
-                  {summaryData.important_points.map((pt, idx) => (
+                  {(summaryData.important_points || []).map((pt, idx) => (
                     <li key={idx} className="flex items-start space-x-2 text-xs text-slate-700 dark:text-slate-300">
                       <CheckCircle2 className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                       <span className="leading-snug">{pt}</span>
@@ -134,7 +202,7 @@ export const SummaryTab = () => {
               ⚡ Quick Revision Takeaways
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {summaryData.quick_revision.map((rev, idx) => (
+              {(summaryData.quick_revision || []).map((rev, idx) => (
                 <div key={idx} className="bg-white dark:bg-slate-900/80 p-2.5 rounded-lg border border-indigo-100 dark:border-indigo-900/50 text-xs text-slate-800 dark:text-slate-200 flex items-center space-x-2">
                   <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400 flex-shrink-0"></span>
                   <span className="font-medium">{rev}</span>
@@ -151,7 +219,7 @@ export const SummaryTab = () => {
           <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
           <p className="text-sm font-semibold">{error}</p>
           <button
-            onClick={loadSummary}
+            onClick={() => loadSummary(true)}
             className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-all"
           >
             Retry Summary Generation

@@ -438,65 +438,14 @@ def save_textbook(metadata_dict: Dict[str, Any], chunks: List[Dict[str, Any]], m
     conn.close()
 
 def get_textbook(textbook_id: str) -> Optional[Dict[str, Any]]:
-    try:
-        if mongodb_service.is_mongo_available():
-            mongo_res = mongodb_service.get_textbook_mongo(textbook_id)
-            if mongo_res:
-                return mongo_res
-    except Exception as e:
-        print(f"[MongoDB] get_textbook notice: {e}")
-
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM textbooks WHERE id = ?", (textbook_id,))
     row = cursor.fetchone()
     conn.close()
-    if not row:
-        return None
-    
-    r_dict = dict(row)
-    return {
-        "id": r_dict["id"],
-        "title": r_dict["title"],
-        "filename": r_dict["filename"],
-        "source_type": r_dict.get("source_type", "pdf"),
-        "total_pages": r_dict["total_pages"],
-        "total_slides": r_dict.get("total_slides"),
-        "duration_seconds": r_dict.get("duration_seconds"),
-        "duration_str": r_dict.get("duration_str"),
-        "file_size_bytes": r_dict["file_size_bytes"],
-        "extracted_images_count": r_dict.get("extracted_images_count", 0),
-        "extracted_transcripts_count": r_dict.get("extracted_transcripts_count", 0),
-        "extracted_tables_count": r_dict.get("extracted_tables_count", 0),
-        "media_items": json.loads(r_dict["media_json"]) if r_dict.get("media_json") else [],
-        "chapters": json.loads(r_dict["chapters_json"]),
-        "created_at": r_dict["created_at"],
-        "user_id": r_dict.get("user_id", "system")
-    }
-
-def get_all_textbooks(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    try:
-        if mongodb_service.is_mongo_available():
-            mongo_res = mongodb_service.get_all_textbooks_mongo()
-            if mongo_res is not None and len(mongo_res) > 0:
-                if user_id:
-                    return [tb for tb in mongo_res if tb.get("user_id") in (user_id, "system", None, "")]
-                return mongo_res
-    except Exception as e:
-        print(f"[MongoDB] get_all_textbooks notice: {e}")
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    if user_id:
-        cursor.execute("SELECT * FROM textbooks WHERE user_id = ? OR user_id = 'system' OR user_id IS NULL OR user_id = '' ORDER BY created_at DESC", (user_id,))
-    else:
-        cursor.execute("SELECT * FROM textbooks ORDER BY created_at DESC")
-    rows = cursor.fetchall()
-    conn.close()
-    textbooks = []
-    for row in rows:
+    if row:
         r_dict = dict(row)
-        textbooks.append({
+        return {
             "id": r_dict["id"],
             "title": r_dict["title"],
             "filename": r_dict["filename"],
@@ -513,8 +462,62 @@ def get_all_textbooks(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
             "chapters": json.loads(r_dict["chapters_json"]),
             "created_at": r_dict["created_at"],
             "user_id": r_dict.get("user_id", "system")
-        })
-    return textbooks
+        }
+
+    try:
+        if mongodb_service.is_mongo_available():
+            mongo_res = mongodb_service.get_textbook_mongo(textbook_id)
+            if mongo_res:
+                return mongo_res
+    except Exception as e:
+        print(f"[MongoDB] get_textbook notice: {e}")
+
+    return None
+
+def get_all_textbooks(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if user_id:
+        cursor.execute("SELECT * FROM textbooks WHERE user_id = ? OR user_id = 'system' OR user_id IS NULL OR user_id = '' ORDER BY created_at DESC", (user_id,))
+    else:
+        cursor.execute("SELECT * FROM textbooks ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    if rows:
+        textbooks = []
+        for row in rows:
+            r_dict = dict(row)
+            textbooks.append({
+                "id": r_dict["id"],
+                "title": r_dict["title"],
+                "filename": r_dict["filename"],
+                "source_type": r_dict.get("source_type", "pdf"),
+                "total_pages": r_dict["total_pages"],
+                "total_slides": r_dict.get("total_slides"),
+                "duration_seconds": r_dict.get("duration_seconds"),
+                "duration_str": r_dict.get("duration_str"),
+                "file_size_bytes": r_dict["file_size_bytes"],
+                "extracted_images_count": r_dict.get("extracted_images_count", 0),
+                "extracted_transcripts_count": r_dict.get("extracted_transcripts_count", 0),
+                "extracted_tables_count": r_dict.get("extracted_tables_count", 0),
+                "media_items": json.loads(r_dict["media_json"]) if r_dict.get("media_json") else [],
+                "chapters": json.loads(r_dict["chapters_json"]),
+                "created_at": r_dict["created_at"],
+                "user_id": r_dict.get("user_id", "system")
+            })
+        return textbooks
+
+    try:
+        if mongodb_service.is_mongo_available():
+            mongo_res = mongodb_service.get_all_textbooks_mongo()
+            if mongo_res is not None and len(mongo_res) > 0:
+                if user_id:
+                    return [tb for tb in mongo_res if tb.get("user_id") in (user_id, "system", None, "")]
+                return mongo_res
+    except Exception as e:
+        print(f"[MongoDB] get_all_textbooks notice: {e}")
+
+    return []
 
 def delete_textbook(textbook_id: str, user_id: Optional[str] = None) -> bool:
     """
@@ -593,14 +596,6 @@ def clear_all_textbooks(user_id: Optional[str] = None) -> int:
     return count
 
 def get_chunks_for_textbook(textbook_id: str, chapter_id: Optional[str] = None, section_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    try:
-        if mongodb_service.is_mongo_available():
-            mongo_res = mongodb_service.get_chunks_for_textbook_mongo(textbook_id, chapter_id, section_id)
-            if mongo_res is not None and len(mongo_res) > 0:
-                return mongo_res
-    except Exception as e:
-        print(f"[MongoDB] get_chunks_for_textbook notice: {e}")
-
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -618,18 +613,37 @@ def get_chunks_for_textbook(textbook_id: str, chapter_id: Optional[str] = None, 
     rows = cursor.fetchall()
     conn.close()
     
-    chunks = []
-    for row in rows:
-        c = dict(row)
-        if c.get("extra_metadata_json"):
-            try:
-                c["metadata"] = json.loads(c["extra_metadata_json"])
-            except Exception:
-                c["metadata"] = {}
-        chunks.append(c)
-    return chunks
+    if rows:
+        chunks = []
+        for row in rows:
+            c = dict(row)
+            if c.get("extra_metadata_json"):
+                try:
+                    c["metadata"] = json.loads(c["extra_metadata_json"])
+                except Exception:
+                    c["metadata"] = {}
+            chunks.append(c)
+        return chunks
+
+    try:
+        if mongodb_service.is_mongo_available():
+            mongo_res = mongodb_service.get_chunks_for_textbook_mongo(textbook_id, chapter_id, section_id)
+            if mongo_res is not None and len(mongo_res) > 0:
+                return mongo_res
+    except Exception as e:
+        print(f"[MongoDB] get_chunks_for_textbook notice: {e}")
+
+    return []
 
 def get_media_for_textbook(textbook_id: str) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM media_items WHERE file_id = ? ORDER BY page ASC, slide ASC", (textbook_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    if rows:
+        return [dict(r) for r in rows]
+
     try:
         if mongodb_service.is_mongo_available():
             mongo_res = mongodb_service.get_media_for_textbook_mongo(textbook_id)
@@ -638,12 +652,7 @@ def get_media_for_textbook(textbook_id: str) -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"[MongoDB] get_media_for_textbook notice: {e}")
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM media_items WHERE file_id = ? ORDER BY page ASC, slide ASC", (textbook_id,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    return []
 
 def record_quiz_result(user_id: str, textbook_id: str, topic: str, difficulty: str, total_q: int, correct_q: int, score_pct: float, results: List[Dict[str, Any]], topic_breakdown: List[Dict[str, Any]]):
     try:
@@ -701,12 +710,91 @@ def record_quiz_result(user_id: str, textbook_id: str, topic: str, difficulty: s
     conn.commit()
     conn.close()
 
+def _normalize_performance_data(perf: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not perf:
+        perf = {}
+    
+    quizzes_completed = int(perf.get("quizzes_completed", perf.get("total_quizzes", 0)))
+    questions_answered = int(perf.get("questions_answered", 0))
+    acc_pct = float(perf.get("accuracy_percentage", perf.get("average_score", 0.0)))
+    
+    topic_masteries = []
+    raw_masteries = perf.get("topic_masteries") or perf.get("topic_mastery") or []
+    for m in raw_masteries:
+        if isinstance(m, dict):
+            pct = float(m.get("mastery_percentage", 0.0))
+            status = m.get("status") or ("Strong" if pct >= 75.0 else ("Moderate" if pct >= 60.0 else "Weak"))
+            topic_masteries.append({
+                "topic": str(m.get("topic", "General")),
+                "mastery_percentage": pct,
+                "quizzes_taken": int(m.get("quizzes_taken", m.get("total_attempts", 0))),
+                "status": status,
+                "last_practiced": str(m.get("last_practiced") or m.get("last_updated") or "")
+            })
+            
+    strong_topics = list(perf.get("strong_topics") or [t["topic"] for t in topic_masteries if t["mastery_percentage"] >= 75.0])
+    weak_topics = list(perf.get("weak_topics") or [t["topic"] for t in topic_masteries if t["mastery_percentage"] < 60.0])
+    
+    overall_progress = float(perf.get("overall_progress", round(sum(t["mastery_percentage"] for t in topic_masteries) / len(topic_masteries), 1) if topic_masteries else 72.0))
+    
+    recent_activity = []
+    raw_activity = perf.get("recent_activity") or perf.get("quiz_history") or []
+    for r in raw_activity:
+        if isinstance(r, dict):
+            recent_activity.append({
+                "quiz_id": str(r.get("quiz_id") or r.get("id") or "quiz"),
+                "topic": str(r.get("topic", "General")),
+                "difficulty": str(r.get("difficulty", "Medium")),
+                "score_percentage": float(r.get("score_percentage", 0.0)),
+                "taken_at": str(r.get("taken_at", ""))
+            })
+            
+    if not topic_masteries:
+        topic_masteries = [
+            {"topic": "Introduction & Relational Model", "mastery_percentage": 90.0, "quizzes_taken": 4, "status": "Strong", "last_practiced": "2026-09-14T10:00:00"},
+            {"topic": "Database Keys & Constraints", "mastery_percentage": 85.0, "quizzes_taken": 3, "status": "Strong", "last_practiced": "2026-09-14T11:30:00"},
+            {"topic": "First Normal Form (1NF)", "mastery_percentage": 80.0, "quizzes_taken": 3, "status": "Strong", "last_practiced": "2026-09-15T09:15:00"},
+            {"topic": "Second Normal Form (2NF)", "mastery_percentage": 40.0, "quizzes_taken": 2, "status": "Weak", "last_practiced": "2026-09-15T15:20:00"},
+            {"topic": "Third Normal Form (3NF)", "mastery_percentage": 55.0, "quizzes_taken": 2, "status": "Weak", "last_practiced": "2026-09-15T16:00:00"},
+            {"topic": "Transactions & ACID Properties", "mastery_percentage": 78.0, "quizzes_taken": 3, "status": "Strong", "last_practiced": "2026-09-15T18:00:00"}
+        ]
+        strong_topics = ["Introduction & Relational Model", "Database Keys & Constraints", "First Normal Form (1NF)", "Transactions & ACID Properties"]
+        weak_topics = ["Second Normal Form (2NF)", "Third Normal Form (3NF)"]
+        if questions_answered == 0:
+            questions_answered = 25
+        if quizzes_completed == 0:
+            quizzes_completed = 3
+        if acc_pct == 0.0:
+            acc_pct = 72.0
+
+    if not recent_activity:
+        recent_activity = [
+            {"quiz_id": "quiz_demo_1", "topic": "Second Normal Form (2NF)", "difficulty": "Medium", "score_percentage": 40.0, "taken_at": "Today, 3:20 PM"},
+            {"quiz_id": "quiz_demo_2", "topic": "Database Keys & Constraints", "difficulty": "Easy", "score_percentage": 100.0, "taken_at": "Today, 11:30 AM"},
+            {"quiz_id": "quiz_demo_3", "topic": "First Normal Form (1NF)", "difficulty": "Medium", "score_percentage": 80.0, "taken_at": "Today, 9:15 AM"}
+        ]
+
+    return {
+        "overall_progress": overall_progress,
+        "quizzes_completed": quizzes_completed,
+        "questions_answered": questions_answered,
+        "accuracy_percentage": acc_pct,
+        "strong_topics": strong_topics,
+        "weak_topics": weak_topics,
+        "topic_masteries": topic_masteries,
+        "recent_activity": recent_activity,
+        "total_quizzes": quizzes_completed,
+        "average_score": acc_pct,
+        "topic_mastery": topic_masteries,
+        "quiz_history": recent_activity
+    }
+
 def get_user_performance(user_id: str = "demo_user") -> Dict[str, Any]:
     try:
         if mongodb_service.is_mongo_available():
             mongo_res = mongodb_service.get_user_performance_mongo(user_id)
-            if mongo_res and mongo_res.get("total_quizzes", 0) > 0:
-                return mongo_res
+            if mongo_res is not None:
+                return _normalize_performance_data(mongo_res)
     except Exception as e:
         print(f"[MongoDB] get_user_performance notice: {e}")
 
@@ -783,7 +871,7 @@ def get_user_performance(user_id: str = "demo_user") -> Dict[str, Any]:
             {"quiz_id": "quiz_demo_3", "topic": "First Normal Form (1NF)", "difficulty": "Medium", "score_percentage": 80.0, "taken_at": "Today, 9:15 AM"}
         ]
 
-    return {
+    return _normalize_performance_data({
         "overall_progress": overall_progress,
         "quizzes_completed": len(history_rows) if history_rows else 3,
         "questions_answered": total_answered,
@@ -792,7 +880,7 @@ def get_user_performance(user_id: str = "demo_user") -> Dict[str, Any]:
         "weak_topics": weak_topics,
         "topic_masteries": topic_masteries,
         "recent_activity": recent_activity
-    }
+    })
 
 # --- Innovation 2: Concept and Prerequisite Graph Database Functions ---
 

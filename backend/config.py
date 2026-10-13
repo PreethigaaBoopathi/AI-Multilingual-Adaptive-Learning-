@@ -41,6 +41,12 @@ DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
 import time
 _GEMINI_QUOTA_EXHAUSTED_UNTIL = 0.0
 
+FAST_GEMINI_MODELS = [
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-3.8-flash"
+]
+
 def is_gemini_available() -> bool:
     """Returns True if GEMINI_API_KEY is configured and not rate-limited by 429 quota exhaustion."""
     global _GEMINI_QUOTA_EXHAUSTED_UNTIL
@@ -50,10 +56,28 @@ def is_gemini_available() -> bool:
         return False
     return True
 
-def mark_gemini_quota_exhausted(duration_seconds: float = 300.0):
+def mark_gemini_quota_exhausted(duration_seconds: float = 120.0):
     """Temporarily marks Gemini as quota-exhausted so requests fall back instantly without network retry lag."""
     global _GEMINI_QUOTA_EXHAUSTED_UNTIL
     _GEMINI_QUOTA_EXHAUSTED_UNTIL = time.time() + duration_seconds
+
+def get_gemini_client():
+    """Returns an optimized google-genai Client with tight timeouts and single-attempt retries to avoid 30s+ 503 hangs."""
+    if not is_gemini_available():
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+        return genai.Client(
+            api_key=GEMINI_API_KEY,
+            http_options=types.HttpOptions(
+                timeout=12000,
+                retry_options=types.HttpRetryOptions(attempts=1)
+            )
+        )
+    except Exception as e:
+        print(f"Failed to create Gemini client: {e}")
+        return None
 
 # Sarvam AI Translation Circuit Breaker
 _SARVAM_RATE_LIMITED_UNTIL = 0.0
@@ -71,3 +95,4 @@ def mark_sarvam_rate_limited(duration_seconds: float = 120.0):
     """Temporarily marks Sarvam as in cooldown upon 429/5xx error."""
     global _SARVAM_RATE_LIMITED_UNTIL
     _SARVAM_RATE_LIMITED_UNTIL = time.time() + duration_seconds
+

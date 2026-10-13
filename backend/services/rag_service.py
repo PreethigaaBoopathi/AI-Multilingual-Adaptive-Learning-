@@ -1,7 +1,7 @@
 import re
 import math
 from typing import Dict, Any, List, Optional, Tuple, Set
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, get_gemini_client, FAST_GEMINI_MODELS, is_gemini_available, mark_gemini_quota_exhausted
 from services.translation_service import translate_text, is_tamil, normalize_tamil_to_concept
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -472,15 +472,16 @@ def generate_outside_knowledge_answer(query: str) -> str:
     """
     if GEMINI_API_KEY:
         try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
+            client = get_gemini_client()
+            if not client:
+                raise ValueError("Gemini client unavailable")
             prompt = f"""You are a helpful academic AI assistant providing outside general knowledge.
 Answer the following student question accurately using broad, established academic knowledge.
 Do not fabricate course references or cite specific page numbers.
 
 Question: {query}
 """
-            for model_candidate in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+            for model_candidate in FAST_GEMINI_MODELS:
                 try:
                     response = client.models.generate_content(
                         model=model_candidate,
@@ -668,10 +669,11 @@ def answer_textbook_query(
     candidate_claims = []
 
     # Attempt Gemini API synthesis if key is present
-    if GEMINI_API_KEY:
+    if is_gemini_available():
         try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
+            client = get_gemini_client()
+            if not client:
+                raise ValueError("Gemini client unavailable")
             
             context_blocks = []
             for i, c in enumerate(top_chunks[:4]):
@@ -697,7 +699,7 @@ Course Material Excerpts:
 {context_text}
 """
             llm_text = None
-            for model_candidate in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+            for model_candidate in FAST_GEMINI_MODELS:
                 try:
                     response = client.models.generate_content(
                         model=model_candidate,

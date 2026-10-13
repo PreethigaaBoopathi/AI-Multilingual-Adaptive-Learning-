@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List, Optional, Tuple, Set
 from datetime import datetime
 
-from config import GEMINI_API_KEY, is_gemini_available, mark_gemini_quota_exhausted
+from config import GEMINI_API_KEY, is_gemini_available, mark_gemini_quota_exhausted, get_gemini_client, FAST_GEMINI_MODELS
 from database import (
     save_concept_graph, get_concept_graph, get_concept_details,
     get_chunks_for_textbook, get_textbook
@@ -538,8 +538,9 @@ def extract_concepts_with_llm(
         return None
 
     def _call_gemini():
-        from google import genai
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = get_gemini_client()
+        if not client:
+            return None
 
         context_items = []
         for idx, ch in enumerate(chunks[:20]):
@@ -586,7 +587,7 @@ Return JSON with exact structure:
   ]
 }}
 """
-        for model_cand in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+        for model_cand in FAST_GEMINI_MODELS:
             try:
                 response = client.models.generate_content(
                     model=model_cand,

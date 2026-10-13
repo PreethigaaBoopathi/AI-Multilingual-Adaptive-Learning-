@@ -1,8 +1,11 @@
 import re
 import json
 from typing import Dict, Any, List, Optional
-from config import GEMINI_API_KEY, is_gemini_available, mark_gemini_quota_exhausted
-from services.translation_service import translate_text
+from config import GEMINI_API_KEY, is_gemini_available, mark_gemini_quota_exhausted, get_gemini_client, FAST_GEMINI_MODELS
+from services.translation_service import translate_text, translate_batch, is_tamil
+
+# In-memory summary cache to eliminate redundant processing and make switching instant
+_SUMMARY_CACHE: Dict[str, Dict[str, Any]] = {}
 
 def clean_academic_text(text: str) -> str:
     """Removes curriculum codes, unit banners, and course headers from text."""
@@ -26,6 +29,11 @@ def summarize_textbook_content(chunks: List[Dict[str, Any]], chapter_title: str,
     - Important Points
     - Quick Revision
     """
+    # 0. Check cache first
+    cache_key = f"{chapter_title.strip().lower()}_{language}_{len(chunks)}"
+    if cache_key in _SUMMARY_CACHE:
+        return dict(_SUMMARY_CACHE[cache_key])
+
     # Aggregate and clean text from chunks
     combined_items = []
     for c in chunks[:12]:
@@ -44,12 +52,14 @@ def summarize_textbook_content(chunks: List[Dict[str, Any]], chapter_title: str,
     else:
         page_range_str = "Course Material Context"
     
-    # Try Gemini API with fast candidate models
-    if is_gemini_available():
+    # Try Gemini API with fast candidate models and tight timeout
+    client = get_gemini_client()
+    if client and is_gemini_available():
         try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            
+            lang_instruction = ""
+            if language == "ta":
+                lang_instruction = "CRITICAL: The requested output language is Tamil (தமிழ்). Generate ALL text values (summary, key_concepts, important_points, quick_revision) directly in natural, fluent, pedagogical Tamil. Keep core technical terms identifiable (e.g. 'Trie (முன்னொட்டு மரம்)')."
+
             prompt = f"""You are an expert academic AI professor and textbook author.
 Generate an executive, pedagogical summary for the chapter '{chapter_title}'.
 
@@ -60,6 +70,7 @@ STRICT REQUIREMENTS:
 4. Extract 4 clear, high-yield 'key_concepts' with short explanations.
 5. Extract 4 crucial 'important_points' (exam & review takeaways, trade-offs, edge cases).
 6. Provide 3-4 punchy, high-impact 'quick_revision' takeaways for rapid review.
+{lang_instruction}
 
 Textbook Content:
 {combined_text}
@@ -73,7 +84,7 @@ Provide output in valid JSON format with these exact keys:
   "quick_revision": ["bullet 1", "bullet 2", "bullet 3"]
 }}
 """
-            model_candidates = ["gemini-3.5-flash-lite", "gemini-3.8-flash"]
+            model_candidates = FAST_GEMINI_MODELS
             last_err = None
             data = None
 
@@ -92,28 +103,38 @@ Provide output in valid JSON format with these exact keys:
                         break
                 except Exception as m_err:
                     last_err = m_err
+                    err_s = str(m_err)
+                    if "503" in err_s or "429" in err_s or "DEADLINE_EXCEEDED" in err_s or "504" in err_s:
+                        continue
                     continue
 
             if data and "summary" in data:
-                if language == "ta":
+                # If language was requested as Tamil but model generated English, translate with batch
+                if language == "ta" and not is_tamil(data["summary"]):
                     data["summary"] = translate_text(data["summary"], "ta")
-                    data["key_concepts"] = [translate_text(k, "ta") for k in data["key_concepts"]]
-                    data["important_points"] = [translate_text(p, "ta") for p in data["important_points"]]
-                    data["quick_revision"] = [translate_text(q, "ta") for q in data["quick_revision"]]
+                    kc = data.get("key_concepts", [])
+                    ip = data.get("important_points", [])
+                    qr = data.get("quick_revision", [])
+                    all_b = kc + ip + qr
+                    trans_b = translate_batch(all_b, "ta")
+                    data["key_concepts"] = trans_b[:len(kc)]
+                    data["important_points"] = trans_b[len(kc):len(kc)+len(ip)]
+                    data["quick_revision"] = trans_b[len(kc)+len(ip):]
                     
                 data["language"] = language
                 data["source_reference"] = f"Chapter: {chapter_title} ({page_range_str})"
+                _SUMMARY_CACHE[cache_key] = data
                 return data
             else:
                 if last_err:
                     err_str = str(last_err)
-                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                        mark_gemini_quota_exhausted()
+                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower() or "503" in err_str:
+                        mark_gemini_quota_exhausted(60.0)
                     print(f"Gemini API summarization fallback triggered: {last_err}")
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                mark_gemini_quota_exhausted()
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower() or "503" in err_str:
+                mark_gemini_quota_exhausted(60.0)
             print(f"Gemini API summarization fallback triggered: {e}")
 
     # Grounded intelligent fallback generator
@@ -264,16 +285,20 @@ Provide output in valid JSON format with these exact keys:
 
     if language == "ta":
         summary = translate_text(summary_en, "ta")
-        key_concepts = [translate_text(k, "ta") for k in key_concepts_en]
-        important_points = [translate_text(p, "ta") for p in important_points_en]
-        quick_revision = [translate_text(q, "ta") for q in quick_revision_en]
+        all_bullets = key_concepts_en + important_points_en + quick_revision_en
+        translated_bullets = translate_batch(all_bullets, "ta")
+        kc_len = len(key_concepts_en)
+        ip_len = len(important_points_en)
+        key_concepts = translated_bullets[:kc_len]
+        important_points = translated_bullets[kc_len:kc_len + ip_len]
+        quick_revision = translated_bullets[kc_len + ip_len:]
     else:
         summary = summary_en
         key_concepts = key_concepts_en
         important_points = important_points_en
         quick_revision = quick_revision_en
 
-    return {
+    result = {
         "title": chapter_title,
         "summary": summary,
         "key_concepts": key_concepts,
@@ -282,3 +307,5 @@ Provide output in valid JSON format with these exact keys:
         "language": language,
         "source_reference": f"Chapter: {chapter_title} ({page_range_str})"
     }
+    _SUMMARY_CACHE[cache_key] = result
+    return result

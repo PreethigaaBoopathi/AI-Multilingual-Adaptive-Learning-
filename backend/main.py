@@ -113,7 +113,7 @@ app.add_middleware(
 # --- Authentication & Session Security Dependency ---
 security = HTTPBearer(auto_error=False)
 
-async def get_current_user(
+def get_current_user(
     request: Request,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> dict:
@@ -174,7 +174,7 @@ def format_user_response(user: dict, token: Optional[str] = None) -> UserRespons
 
 # --- Authentication Routes ---
 @app.post("/api/auth/register", response_model=UserResponse)
-async def register(data: UserRegister):
+def register(data: UserRegister):
     is_valid, err_msg = validate_registration_input(
         name=data.name,
         email=data.email,
@@ -216,7 +216,7 @@ async def register(data: UserRegister):
     return format_user_response(user, token)
 
 @app.post("/api/auth/login", response_model=UserResponse)
-async def login(data: UserLogin):
+def login(data: UserLogin):
     email = (data.email or "").strip().lower()
     if not email or not data.password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email and password are required.")
@@ -232,11 +232,11 @@ async def login(data: UserLogin):
     return format_user_response(user, token)
 
 @app.get("/api/auth/me", response_model=UserResponse)
-async def get_me(current_user: dict = Depends(get_current_user)):
+def get_me(current_user: dict = Depends(get_current_user)):
     return format_user_response(current_user)
 
 @app.put("/api/auth/profile", response_model=UserResponse)
-async def update_profile(data: UserProfileUpdate, current_user: dict = Depends(get_current_user)):
+def update_profile(data: UserProfileUpdate, current_user: dict = Depends(get_current_user)):
     updates = {}
     if data.name is not None:
         if len(data.name.strip()) < 2:
@@ -263,7 +263,7 @@ async def update_profile(data: UserProfileUpdate, current_user: dict = Depends(g
     return format_user_response(updated_user)
 
 @app.post("/api/auth/forgot-password")
-async def forgot_password(data: ForgotPasswordRequest):
+def forgot_password(data: ForgotPasswordRequest):
     email = (data.email or "").strip().lower()
     user = get_user_by_email(email)
     if not user:
@@ -279,7 +279,7 @@ async def forgot_password(data: ForgotPasswordRequest):
     }
 
 @app.post("/api/auth/reset-password")
-async def reset_password(data: ResetPasswordRequest):
+def reset_password(data: ResetPasswordRequest):
     email = (data.email or "").strip().lower()
     if len(data.new_password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 6 characters long.")
@@ -295,7 +295,7 @@ async def reset_password(data: ResetPasswordRequest):
     }
 
 @app.post("/api/auth/logout")
-async def logout():
+def logout():
     return {
         "status": "success",
         "message": "Session terminated successfully."
@@ -304,18 +304,18 @@ async def logout():
 
 # --- Textbook Management & Upload Routes ---
 @app.get("/api/textbooks", response_model=List[TextbookMetadata])
-async def list_textbooks(current_user: dict = Depends(get_current_user)):
+def list_textbooks(current_user: dict = Depends(get_current_user)):
     return get_all_textbooks(user_id=current_user["id"])
 
 @app.get("/api/textbook/{textbook_id}")
-async def get_textbook_details(textbook_id: str, current_user: dict = Depends(get_current_user)):
+def get_textbook_details(textbook_id: str, current_user: dict = Depends(get_current_user)):
     tb = get_textbook(textbook_id)
     if not tb:
         raise HTTPException(status_code=404, detail="Textbook not found")
     return tb
 
 @app.delete("/api/textbooks/{textbook_id}")
-async def remove_textbook_endpoint(textbook_id: str, current_user: dict = Depends(get_current_user)):
+def remove_textbook_endpoint(textbook_id: str, current_user: dict = Depends(get_current_user)):
     success = delete_textbook(textbook_id, user_id=current_user["id"])
     if not success:
         raise HTTPException(status_code=404, detail="Material not found or access denied")
@@ -326,7 +326,7 @@ async def remove_textbook_endpoint(textbook_id: str, current_user: dict = Depend
     }
 
 @app.delete("/api/textbooks")
-async def clear_textbooks_endpoint(current_user: dict = Depends(get_current_user)):
+def clear_textbooks_endpoint(current_user: dict = Depends(get_current_user)):
     deleted_count = clear_all_textbooks(user_id=current_user["id"])
     return {
         "status": "success",
@@ -335,7 +335,7 @@ async def clear_textbooks_endpoint(current_user: dict = Depends(get_current_user
     }
 
 @app.post("/api/sample-textbook")
-async def load_sample_textbook(current_user: dict = Depends(get_current_user)):
+def load_sample_textbook(current_user: dict = Depends(get_current_user)):
     data = get_demo_textbook_data()
     save_textbook(data["metadata"], data["chunks"])
     generate_course_concept_graph(data["metadata"]["id"], force_regenerate=True)
@@ -346,7 +346,7 @@ async def load_sample_textbook(current_user: dict = Depends(get_current_user)):
     }
 
 @app.post("/api/upload")
-async def upload_textbook(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+def upload_textbook(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     filename = file.filename
     ext = Path(filename).suffix.lower()
     
@@ -385,7 +385,7 @@ async def upload_textbook(file: UploadFile = File(...), current_user: dict = Dep
 
 # --- Innovation 2: Concept & Prerequisite Graph Routes ---
 @app.get("/api/concept-graph/{textbook_id}", response_model=ConceptGraphResponse)
-async def get_course_concept_graph(textbook_id: str, current_user: dict = Depends(get_current_user)):
+def get_course_concept_graph(textbook_id: str, current_user: dict = Depends(get_current_user)):
     try:
         graph = generate_course_concept_graph(textbook_id, force_regenerate=False)
         return ConceptGraphResponse(**graph)
@@ -393,7 +393,7 @@ async def get_course_concept_graph(textbook_id: str, current_user: dict = Depend
         raise HTTPException(status_code=500, detail=f"Error generating concept graph: {str(e)}")
 
 @app.post("/api/concept-graph/generate", response_model=ConceptGraphResponse)
-async def regenerate_concept_graph(req: ConceptGraphGenerateRequest, current_user: dict = Depends(get_current_user)):
+def regenerate_concept_graph(req: ConceptGraphGenerateRequest, current_user: dict = Depends(get_current_user)):
     try:
         graph = generate_course_concept_graph(req.course_id, force_regenerate=req.force_regenerate)
         return ConceptGraphResponse(**graph)
@@ -401,14 +401,14 @@ async def regenerate_concept_graph(req: ConceptGraphGenerateRequest, current_use
         raise HTTPException(status_code=500, detail=f"Error generating concept graph: {str(e)}")
 
 @app.get("/api/concept-graph/{textbook_id}/concept/{concept_id}", response_model=ConceptDetailResponse)
-async def get_single_concept_details(textbook_id: str, concept_id: str, current_user: dict = Depends(get_current_user)):
+def get_single_concept_details(textbook_id: str, concept_id: str, current_user: dict = Depends(get_current_user)):
     details = fetch_concept_details(textbook_id, concept_id)
     if not details:
         raise HTTPException(status_code=404, detail="Concept not found")
     return ConceptDetailResponse(**details)
 
 @app.get("/api/concept-graph/{textbook_id}/learning-paths")
-async def get_course_learning_paths(textbook_id: str, current_user: dict = Depends(get_current_user)):
+def get_course_learning_paths(textbook_id: str, current_user: dict = Depends(get_current_user)):
     graph = generate_course_concept_graph(textbook_id)
     return {
         "course_id": textbook_id,
@@ -418,7 +418,7 @@ async def get_course_learning_paths(textbook_id: str, current_user: dict = Depen
 
 # --- Summarization Route ---
 @app.post("/api/summarize", response_model=SummarizeResponse)
-async def summarize(req: SummarizeRequest, current_user: dict = Depends(get_current_user)):
+def summarize(req: SummarizeRequest, current_user: dict = Depends(get_current_user)):
     tb = get_textbook(req.textbook_id)
     if not tb:
         raise HTTPException(status_code=404, detail="Textbook not found")
@@ -439,7 +439,7 @@ async def summarize(req: SummarizeRequest, current_user: dict = Depends(get_curr
 
 # --- Adaptive Explanation Route (Legacy & Enhanced) ---
 @app.post("/api/explain", response_model=ExplainResponse)
-async def explain_concept(req: ExplainRequest, current_user: dict = Depends(get_current_user)):
+def explain_concept(req: ExplainRequest, current_user: dict = Depends(get_current_user)):
     chunks = get_chunks_for_textbook(req.textbook_id)
     if not chunks:
         chunks = get_demo_textbook_data()["chunks"]
@@ -454,7 +454,7 @@ async def explain_concept(req: ExplainRequest, current_user: dict = Depends(get_
 
 # --- Innovation 6: Full Adaptive Explanation & Visual Learning Route ---
 @app.post("/api/adaptive-explain", response_model=AdaptiveExplainResponse)
-async def adaptive_explain_concept(req: AdaptiveExplainRequest, current_user: dict = Depends(get_current_user)):
+def adaptive_explain_concept(req: AdaptiveExplainRequest, current_user: dict = Depends(get_current_user)):
     try:
         explanation_data = generate_adaptive_explanation_pipeline(
             course_id=req.textbook_id,
@@ -469,7 +469,7 @@ async def adaptive_explain_concept(req: AdaptiveExplainRequest, current_user: di
         raise HTTPException(status_code=500, detail=f"Error generating adaptive explanation: {str(e)}")
 
 @app.post("/api/adaptive-explain/diagnostic", response_model=DiagnosticQuestionResponse)
-async def get_diagnostic_question(req: DiagnosticQuestionRequest, current_user: dict = Depends(get_current_user)):
+def get_diagnostic_question(req: DiagnosticQuestionRequest, current_user: dict = Depends(get_current_user)):
     try:
         diag_data = generate_diagnostic_question_pipeline(
             course_id=req.textbook_id,
@@ -482,7 +482,7 @@ async def get_diagnostic_question(req: DiagnosticQuestionRequest, current_user: 
         raise HTTPException(status_code=500, detail=f"Error generating diagnostic question: {str(e)}")
 
 @app.post("/api/adaptive-explain/diagnostic/submit", response_model=DiagnosticSubmitResponse)
-async def submit_diagnostic_session(req: DiagnosticSubmitRequest, current_user: dict = Depends(get_current_user)):
+def submit_diagnostic_session(req: DiagnosticSubmitRequest, current_user: dict = Depends(get_current_user)):
     try:
         eval_result = evaluate_diagnostic_session_pipeline(
             course_id=req.course_id,
@@ -496,7 +496,7 @@ async def submit_diagnostic_session(req: DiagnosticSubmitRequest, current_user: 
         raise HTTPException(status_code=500, detail=f"Error evaluating diagnostic session: {str(e)}")
 
 @app.post("/api/adaptive-explain/submit-practice", response_model=AdaptivePracticeSubmitResponse)
-async def submit_adaptive_practice(req: AdaptivePracticeSubmitRequest, current_user: dict = Depends(get_current_user)):
+def submit_adaptive_practice(req: AdaptivePracticeSubmitRequest, current_user: dict = Depends(get_current_user)):
     try:
         eval_result = evaluate_adaptive_practice_pipeline(
             course_id=req.course_id,
@@ -513,7 +513,7 @@ async def submit_adaptive_practice(req: AdaptivePracticeSubmitRequest, current_u
         raise HTTPException(status_code=500, detail=f"Error evaluating practice answer: {str(e)}")
 
 @app.get("/api/adaptive-explain/concept-status/{textbook_id}/{concept_name}")
-async def get_concept_status(textbook_id: str, concept_name: str, current_user: dict = Depends(get_current_user)):
+def get_concept_status(textbook_id: str, concept_name: str, current_user: dict = Depends(get_current_user)):
     try:
         status_info = determine_concept_mastery_level(
             course_id=textbook_id,
@@ -532,7 +532,7 @@ async def get_concept_status(textbook_id: str, concept_name: str, current_user: 
 
 # --- Innovation 5: Visual Explanation Route ---
 @app.post("/api/visualize", response_model=VisualizeResponse)
-async def visualize_concept(req: VisualizeRequest, current_user: dict = Depends(get_current_user)):
+def visualize_concept(req: VisualizeRequest, current_user: dict = Depends(get_current_user)):
     chunks = get_chunks_for_textbook(req.textbook_id)
     if not chunks:
         chunks = get_demo_textbook_data()["chunks"]
@@ -549,7 +549,7 @@ async def visualize_concept(req: VisualizeRequest, current_user: dict = Depends(
 
 # --- Innovation 5: Personalized Learning Paths & Node Explanations ---
 @app.post("/api/learning-path/personalized", response_model=PersonalizedLearningPathResponse)
-async def get_personalized_path(req: PersonalizedLearningPathRequest, current_user: dict = Depends(get_current_user)):
+def get_personalized_path(req: PersonalizedLearningPathRequest, current_user: dict = Depends(get_current_user)):
     try:
         path_data = generate_personalized_learning_path(
             course_id=req.course_id,
@@ -562,7 +562,7 @@ async def get_personalized_path(req: PersonalizedLearningPathRequest, current_us
         raise HTTPException(status_code=500, detail=f"Error generating learning path: {str(e)}")
 
 @app.get("/api/learning-path/personalized/{course_id}", response_model=PersonalizedLearningPathResponse)
-async def get_personalized_path_get(
+def get_personalized_path_get(
     course_id: str, 
     target_concept: Optional[str] = Query(None), 
     current_user: dict = Depends(get_current_user)
@@ -578,7 +578,7 @@ async def get_personalized_path_get(
         raise HTTPException(status_code=500, detail=f"Error generating learning path: {str(e)}")
 
 @app.post("/api/learning-path/progress", response_model=ConceptProgressResponse)
-async def update_concept_progress(req: ConceptProgressUpdateRequest, current_user: dict = Depends(get_current_user)):
+def update_concept_progress(req: ConceptProgressUpdateRequest, current_user: dict = Depends(get_current_user)):
     try:
         record_user_concept_progress(
             user_id=current_user["id"],
@@ -599,7 +599,7 @@ async def update_concept_progress(req: ConceptProgressUpdateRequest, current_use
         raise HTTPException(status_code=500, detail=f"Error recording progress: {str(e)}")
 
 @app.get("/api/learning-path/progress/{course_id}", response_model=ConceptProgressResponse)
-async def fetch_concept_progress(course_id: str, current_user: dict = Depends(get_current_user)):
+def fetch_concept_progress(course_id: str, current_user: dict = Depends(get_current_user)):
     try:
         progress_items = get_user_concept_progress(current_user["id"], course_id)
         return ConceptProgressResponse(
@@ -612,7 +612,7 @@ async def fetch_concept_progress(course_id: str, current_user: dict = Depends(ge
         raise HTTPException(status_code=500, detail=f"Error fetching progress: {str(e)}")
 
 @app.post("/api/learning-path/node-explain", response_model=NodeExplanationResponse)
-async def explain_node_endpoint(req: NodeExplanationRequest, current_user: dict = Depends(get_current_user)):
+def explain_node_endpoint(req: NodeExplanationRequest, current_user: dict = Depends(get_current_user)):
     try:
         data = explain_learning_path_node(
             course_id=req.course_id,
@@ -626,7 +626,7 @@ async def explain_node_endpoint(req: NodeExplanationRequest, current_user: dict 
         raise HTTPException(status_code=500, detail=f"Error explaining node: {str(e)}")
 
 @app.get("/api/learning-path/resources/{course_id}", response_model=UnifiedCourseResourcesResponse)
-async def get_unified_course_resources(course_id: str, current_user: dict = Depends(get_current_user)):
+def get_unified_course_resources(course_id: str, current_user: dict = Depends(get_current_user)):
     try:
         resources = build_unified_resource_index(course_id)
         counts_by_modality = {}
@@ -644,7 +644,7 @@ async def get_unified_course_resources(course_id: str, current_user: dict = Depe
         raise HTTPException(status_code=500, detail=f"Error retrieving unified resources: {str(e)}")
 
 @app.post("/api/learning-path/verify-step", response_model=VerifyLearningPathStepResponse)
-async def verify_step_endpoint(req: VerifyLearningPathStepRequest, current_user: dict = Depends(get_current_user)):
+def verify_step_endpoint(req: VerifyLearningPathStepRequest, current_user: dict = Depends(get_current_user)):
     try:
         result = verify_learning_path_step(
             course_id=req.course_id,
@@ -665,7 +665,7 @@ async def verify_step_endpoint(req: VerifyLearningPathStepRequest, current_user:
 
 # --- Grounded Q&A (RAG) Route (Innovation 3: Anti-Hallucination Tutor) ---
 @app.post("/api/chat", response_model=ChatQueryResponse)
-async def chat_with_textbook(req: ChatQueryRequest, current_user: dict = Depends(get_current_user)):
+def chat_with_textbook(req: ChatQueryRequest, current_user: dict = Depends(get_current_user)):
     chunks = get_chunks_for_textbook(req.textbook_id)
     if not chunks and req.textbook_id == "tb_dbms_norm_001":
         chunks = get_demo_textbook_data()["chunks"]
@@ -682,7 +682,7 @@ async def chat_with_textbook(req: ChatQueryRequest, current_user: dict = Depends
 
 # --- Quiz Generation & Evaluation Routes ---
 @app.post("/api/quiz/generate", response_model=QuizGenerateResponse)
-async def create_quiz(req: QuizGenerateRequest, current_user: dict = Depends(get_current_user)):
+def create_quiz(req: QuizGenerateRequest, current_user: dict = Depends(get_current_user)):
     quiz_data = generate_quiz(
         textbook_id=req.textbook_id,
         topic=req.topic,
@@ -693,7 +693,7 @@ async def create_quiz(req: QuizGenerateRequest, current_user: dict = Depends(get
     return QuizGenerateResponse(**quiz_data)
 
 @app.post("/api/quiz/submit", response_model=QuizSubmitResponse)
-async def submit_quiz(req: QuizSubmitRequest, current_user: dict = Depends(get_current_user)):
+def submit_quiz(req: QuizSubmitRequest, current_user: dict = Depends(get_current_user)):
     answers_payload = [a.model_dump() for a in req.answers]
     result_data = evaluate_quiz_submission(
         user_id=current_user["id"],
@@ -708,7 +708,7 @@ async def submit_quiz(req: QuizSubmitRequest, current_user: dict = Depends(get_c
 
 # --- Innovation 4: Misconception-Aware Adaptive Assessment Routes ---
 @app.post("/api/assessment/generate", response_model=AssessmentGenerateResponse)
-async def generate_assessment(req: AssessmentGenerateRequest, current_user: dict = Depends(get_current_user)):
+def generate_assessment(req: AssessmentGenerateRequest, current_user: dict = Depends(get_current_user)):
     try:
         data = generate_dynamic_assessment_questions(
             course_id=req.course_id,
@@ -726,7 +726,7 @@ async def generate_assessment(req: AssessmentGenerateRequest, current_user: dict
         raise HTTPException(status_code=500, detail=f"Error generating assessment: {str(e)}")
 
 @app.post("/api/assessment/submit", response_model=AssessmentSubmitResponse)
-async def submit_assessment(req: AssessmentSubmitRequest, current_user: dict = Depends(get_current_user)):
+def submit_assessment(req: AssessmentSubmitRequest, current_user: dict = Depends(get_current_user)):
     try:
         from database import get_assessment_questions
         # Fetch question details from DB to evaluate server-side
@@ -800,7 +800,7 @@ async def submit_assessment(req: AssessmentSubmitRequest, current_user: dict = D
         raise HTTPException(status_code=500, detail=f"Error evaluating assessment: {str(e)}")
 
 @app.post("/api/assessment/adaptive-next", response_model=AdaptiveNextStepResponse)
-async def get_adaptive_next_question(req: AdaptiveNextStepRequest, current_user: dict = Depends(get_current_user)):
+def get_adaptive_next_question(req: AdaptiveNextStepRequest, current_user: dict = Depends(get_current_user)):
     try:
         next_step = select_adaptive_next_step(
             course_id=req.course_id,
@@ -815,13 +815,13 @@ async def get_adaptive_next_question(req: AdaptiveNextStepRequest, current_user:
         raise HTTPException(status_code=500, detail=f"Error getting adaptive next step: {str(e)}")
 
 @app.get("/api/assessment/misconceptions/{course_id}")
-async def fetch_user_misconceptions(course_id: str, current_user: dict = Depends(get_current_user)):
+def fetch_user_misconceptions(course_id: str, current_user: dict = Depends(get_current_user)):
     from database import get_user_misconceptions
     misconceptions = get_user_misconceptions(user_id=current_user["id"], course_id=course_id, status="active")
     return {"course_id": course_id, "user_id": current_user["id"], "misconceptions": misconceptions}
 
 @app.post("/api/assessment/clarify-reasoning", response_model=ClarifyReasoningResponse)
-async def clarify_student_reasoning(req: ClarifyReasoningRequest, current_user: dict = Depends(get_current_user)):
+def clarify_student_reasoning(req: ClarifyReasoningRequest, current_user: dict = Depends(get_current_user)):
     try:
         clean_ans = req.clarifying_answer.strip()
         confirmed = len(clean_ans) > 5 and not any(w in clean_ans.lower() for w in ["typo", "misread", "mistake", "slip", "misclick"])
@@ -853,19 +853,23 @@ async def clarify_student_reasoning(req: ClarifyReasoningRequest, current_user: 
         raise HTTPException(status_code=500, detail=f"Error processing clarification: {str(e)}")
 
 @app.get("/api/assessment/history/{course_id}")
-async def get_assessment_attempt_history(course_id: str, current_user: dict = Depends(get_current_user)):
+def get_assessment_attempt_history(course_id: str, current_user: dict = Depends(get_current_user)):
     from database import get_user_assessment_history
     history = get_user_assessment_history(user_id=current_user["id"], course_id=course_id, limit=25)
     return {"course_id": course_id, "history": history}
 
 # --- Performance & Recommendations Routes ---
 @app.get("/api/performance", response_model=PerformanceOverview)
-async def get_performance(current_user: dict = Depends(get_current_user)):
-    perf = get_user_performance(current_user["id"])
+def get_performance(
+    user_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    target_user_id = user_id or current_user.get("id", "demo_user")
+    perf = get_user_performance(target_user_id)
     return PerformanceOverview(**perf)
 
 @app.get("/api/recommendations", response_model=RecommendationPack)
-async def get_recommendation(
+def get_recommendation(
     topic: Optional[str] = None,
     course_id: Optional[str] = "tb_dbms_norm_001",
     language: Optional[str] = Query("en"),
@@ -881,7 +885,7 @@ async def get_recommendation(
 
 # --- Translation Route ---
 @app.post("/api/translate", response_model=TranslateResponse)
-async def translate_endpoint(req: TranslateRequest, current_user: dict = Depends(get_current_user)):
+def translate_endpoint(req: TranslateRequest, current_user: dict = Depends(get_current_user)):
     translated = translate_text(
         text=req.text,
         target_lang=req.target_language,
@@ -905,7 +909,7 @@ if MEDIA_DIR.exists():
 from fastapi.responses import FileResponse
 
 @app.get("/")
-async def root(request: Request):
+def root(request: Request):
     accept_header = request.headers.get("accept", "")
     index_file = STATIC_DIR / "index.html"
     if "text/html" in accept_header or not ("application/json" in accept_header):
@@ -918,7 +922,7 @@ async def root(request: Request):
     }
 
 @app.get("/api/health")
-async def health_check():
+def health_check():
     return {
         "status": "online",
         "app": APP_TITLE,

@@ -9,6 +9,7 @@ from config import MONGODB_URL, MONGODB_DB_NAME
 _mongo_client: Optional[MongoClient] = None
 _mongo_db = None
 _mongo_connected: Optional[bool] = None
+_indexes_initialized: bool = False
 
 def get_mongo_client() -> Optional[MongoClient]:
     global _mongo_client, _mongo_connected
@@ -20,9 +21,11 @@ def get_mongo_client() -> Optional[MongoClient]:
         try:
             _mongo_client = MongoClient(
                 MONGODB_URL,
-                serverSelectionTimeoutMS=5000,
-                connectTimeoutMS=5000,
-                socketTimeoutMS=5000,
+                serverSelectionTimeoutMS=2000,
+                connectTimeoutMS=2000,
+                socketTimeoutMS=2500,
+                maxPoolSize=25,
+                minPoolSize=1,
                 retryWrites=True
             )
             # Quick ping check
@@ -53,7 +56,11 @@ def is_mongo_available() -> bool:
     return get_mongo_db() is not None
 
 def init_mongo_indexes():
-    """Initializes primary indexes on MongoDB collections for optimal query speed."""
+    """Initializes primary indexes on MongoDB collections for optimal query speed once."""
+    global _indexes_initialized
+    if _indexes_initialized or _mongo_client is None:
+        return
+    _indexes_initialized = True
     try:
         if _mongo_client is None:
             return
@@ -273,19 +280,91 @@ def get_user_performance_mongo(user_id: str = "demo_user") -> Optional[Dict[str,
         history = list(db.quiz_history.find({"user_id": user_id}, {"_id": 0}).sort("taken_at", -1))
         mastery = list(db.topic_mastery.find({"user_id": user_id}, {"_id": 0}))
         
-        total_quizzes = len(history)
-        avg_score = round(sum(q["score_percentage"] for q in history) / total_quizzes, 1) if total_quizzes > 0 else 0.0
-        
-        weak_topics = [t["topic"] for t in mastery if t.get("mastery_percentage", 0.0) < 60.0]
-        strong_topics = [t["topic"] for t in mastery if t.get("mastery_percentage", 0.0) >= 80.0]
-        
+        topic_masteries = []
+        strong_topics = []
+        weak_topics = []
+        total_answered = 0
+        total_correct = 0
+
+        for m in mastery:
+            pct = float(m.get("mastery_percentage", 0.0))
+            status = "Strong" if pct >= 75.0 else ("Moderate" if pct >= 60.0 else "Weak")
+            attempts = int(m.get("total_attempts", 0))
+            correct = int(m.get("correct_attempts", 0))
+            t_name = str(m.get("topic", "General"))
+            
+            topic_masteries.append({
+                "topic": t_name,
+                "mastery_percentage": pct,
+                "quizzes_taken": attempts,
+                "status": status,
+                "last_practiced": str(m.get("last_updated") or m.get("last_practiced") or datetime.now().isoformat())
+            })
+            if pct >= 75.0:
+                strong_topics.append(t_name)
+            elif pct < 60.0:
+                weak_topics.append(t_name)
+            total_answered += attempts
+            total_correct += correct
+
+        # If user has quiz history but total_answered was not counted from mastery
+        if total_answered == 0 and history:
+            total_answered = sum(int(q.get("total_questions", 0)) for q in history)
+            total_correct = sum(int(q.get("correct_count", 0)) for q in history)
+
+        # Default starter demo state if user has completely zero records
+        if not topic_masteries and not history:
+            topic_masteries = [
+                {"topic": "Introduction & Relational Model", "mastery_percentage": 90.0, "quizzes_taken": 4, "status": "Strong", "last_practiced": "2026-09-14T10:00:00"},
+                {"topic": "Database Keys & Constraints", "mastery_percentage": 85.0, "quizzes_taken": 3, "status": "Strong", "last_practiced": "2026-09-14T11:30:00"},
+                {"topic": "First Normal Form (1NF)", "mastery_percentage": 80.0, "quizzes_taken": 3, "status": "Strong", "last_practiced": "2026-09-15T09:15:00"},
+                {"topic": "Second Normal Form (2NF)", "mastery_percentage": 40.0, "quizzes_taken": 2, "status": "Weak", "last_practiced": "2026-09-15T15:20:00"},
+                {"topic": "Third Normal Form (3NF)", "mastery_percentage": 55.0, "quizzes_taken": 2, "status": "Weak", "last_practiced": "2026-09-15T16:00:00"},
+                {"topic": "Transactions & ACID Properties", "mastery_percentage": 78.0, "quizzes_taken": 3, "status": "Strong", "last_practiced": "2026-09-15T18:00:00"}
+            ]
+            strong_topics = ["Introduction & Relational Model", "Database Keys & Constraints", "First Normal Form (1NF)", "Transactions & ACID Properties"]
+            weak_topics = ["Second Normal Form (2NF)", "Third Normal Form (3NF)"]
+            total_answered = 25
+            total_correct = 18
+
+        acc_pct = round((total_correct / total_answered) * 100, 1) if total_answered > 0 else (
+            round(sum(float(q.get("score_percentage", 0.0)) for q in history) / len(history), 1) if history else 72.0
+        )
+        overall_progress = round(sum(t["mastery_percentage"] for t in topic_masteries) / len(topic_masteries), 1) if topic_masteries else 72.0
+
+        recent_activity = []
+        for r in history[:10]:
+            recent_activity.append({
+                "quiz_id": str(r.get("id") or r.get("quiz_id") or "quiz"),
+                "topic": str(r.get("topic", "General")),
+                "difficulty": str(r.get("difficulty", "Medium")),
+                "score_percentage": float(r.get("score_percentage", 0.0)),
+                "taken_at": str(r.get("taken_at", ""))
+            })
+
+        if not recent_activity and not history:
+            recent_activity = [
+                {"quiz_id": "quiz_demo_1", "topic": "Second Normal Form (2NF)", "difficulty": "Medium", "score_percentage": 40.0, "taken_at": "Today, 3:20 PM"},
+                {"quiz_id": "quiz_demo_2", "topic": "Database Keys & Constraints", "difficulty": "Easy", "score_percentage": 100.0, "taken_at": "Today, 11:30 AM"},
+                {"quiz_id": "quiz_demo_3", "topic": "First Normal Form (1NF)", "difficulty": "Medium", "score_percentage": 80.0, "taken_at": "Today, 9:15 AM"}
+            ]
+
+        quizzes_completed = len(history) if history else (3 if not mastery else 0)
+
         return {
-            "total_quizzes": total_quizzes,
-            "average_score": avg_score,
-            "topic_mastery": mastery,
-            "quiz_history": history[:10],
+            "overall_progress": overall_progress,
+            "quizzes_completed": quizzes_completed,
+            "questions_answered": total_answered,
+            "accuracy_percentage": acc_pct,
+            "strong_topics": strong_topics,
             "weak_topics": weak_topics,
-            "strong_topics": strong_topics
+            "topic_masteries": topic_masteries,
+            "recent_activity": recent_activity,
+            # Backward-compatible fields
+            "total_quizzes": quizzes_completed,
+            "average_score": acc_pct,
+            "topic_mastery": mastery,
+            "quiz_history": history[:10]
         }
     except Exception as e:
         print(f"[MongoDB] Error fetching performance: {e}")

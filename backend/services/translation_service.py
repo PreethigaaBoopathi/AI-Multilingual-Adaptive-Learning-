@@ -9,7 +9,9 @@ from config import (
     GEMINI_API_KEY, 
     SARVAM_API_KEY,
     mark_gemini_quota_exhausted,
-    is_gemini_available
+    is_gemini_available,
+    get_gemini_client,
+    FAST_GEMINI_MODELS
 )
 
 # -----------------------------------------------------------------------------
@@ -278,12 +280,8 @@ def restore_literals(text: str, protected: List[str]) -> str:
 # 3. GOOGLE GEMINI OFFICIAL AI TRANSLATION PROVIDER
 # -----------------------------------------------------------------------------
 
-# Supported candidate models with gemini-3.5-flash-lite as primary (fast, low token footprint, high availability)
-GEMINI_TRANSLATION_MODELS = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3.6-flash",
-]
+# Supported candidate models with fast availability
+GEMINI_TRANSLATION_MODELS = FAST_GEMINI_MODELS
 
 def is_sarvam_available() -> bool:
     """Sarvam translation is superseded by Google Gemini to prevent HTTP 402 payment errors."""
@@ -304,18 +302,15 @@ def _translate_with_gemini_single_chunk(text: str, source_lang: str = "en", targ
     - Handles rate limits and quota exhaustion with automatic circuit breaker cooldown.
     - Tries candidate models in order.
     """
-    if not GEMINI_API_KEY or _is_quota_cooldown_active():
+    if not is_gemini_available() or _is_quota_cooldown_active():
         return None
 
     clean_text = text.strip()
     if not clean_text:
         return text
 
-    try:
-        from google import genai
-        client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"[Gemini Translation] Client init note: {e}")
+    client = get_gemini_client()
+    if not client:
         return None
 
     if target_lang == "ta":
@@ -599,14 +594,15 @@ def translate_text(text: str, target_lang: str = "ta", source_lang: str = "en") 
     # 1. Protect code, math equations, citations, and filenames
     protected_text, protected_tokens = protect_literals(text)
 
-    # 2. Priority 1: Official Google Gemini AI Translation
-    translated = None
-    if GEMINI_API_KEY and not _is_quota_cooldown_active():
-        translated = _translate_with_gemini(protected_text, source_lang=src, target_lang=tgt)
+    # 2. Priority 1: High-reliability Free Cloud Translation (0.4s response, natural Tamil, zero quota stalls)
+    translated = _translate_with_google_free(protected_text, source_lang=src, target_lang=tgt)
 
-    # 3. Priority 2: High-reliability Free Cloud Translation Fallback (Zero Quota Limits)
-    if not translated:
-        translated = _translate_with_google_free(protected_text, source_lang=src, target_lang=tgt)
+    # 3. Priority 2: Google Gemini AI Translation if needed
+    if not translated and GEMINI_API_KEY and not _is_quota_cooldown_active():
+        try:
+            translated = _translate_with_gemini(protected_text, source_lang=src, target_lang=tgt)
+        except Exception as ge:
+            print(f"[Gemini Translation] Fallback notice: {ge}")
 
     # 4. Priority 3: High-fidelity rule-based & concept normalization fallback
     if not translated:
@@ -621,6 +617,55 @@ def translate_text(text: str, target_lang: str = "ta", source_lang: str = "en") 
     # 6. Cache result
     _TRANSLATION_CACHE[cache_key] = final_output
     return final_output
+
+def translate_batch(texts: List[str], target_lang: str = "ta", source_lang: str = "en") -> List[str]:
+    """
+    Translates a list of strings in a single optimized batch network request.
+    Reduces 10+ sequential round-trips to just 1 fast request.
+    """
+    if not texts:
+        return []
+    tgt = "ta" if target_lang in ["ta", "tamil", "ta-IN"] else "en"
+    src = "ta" if source_lang in ["ta", "tamil", "ta-IN"] else "en"
+    if tgt == src:
+        return texts
+
+    results: List[Optional[str]] = [None] * len(texts)
+    missing_indices = []
+    missing_texts = []
+    
+    for idx, t in enumerate(texts):
+        s = str(t).strip() if t is not None else ""
+        if not s:
+            results[idx] = str(t or "")
+            continue
+        key = f"{src}_{tgt}_{hash(s)}"
+        if key in _TRANSLATION_CACHE:
+            results[idx] = _TRANSLATION_CACHE[key]
+        else:
+            missing_indices.append(idx)
+            missing_texts.append(s)
+
+    if not missing_texts:
+        return [r if r is not None else "" for r in results]
+
+    # Join missing texts with a clean delimiter and translate in ONE network call
+    separator = "\n===ITEM_SEP===\n"
+    combined = separator.join(missing_texts)
+    translated_combined = translate_text(combined, target_lang=tgt, source_lang=src)
+    
+    parts = translated_combined.split("===ITEM_SEP===")
+    if len(parts) == len(missing_texts):
+        for idx, part in zip(missing_indices, parts):
+            clean_part = part.strip()
+            results[idx] = clean_part
+            _TRANSLATION_CACHE[f"{src}_{tgt}_{hash(missing_texts[missing_indices.index(idx)])}"] = clean_part
+    else:
+        # Fallback to translating individual items if delimiter was affected
+        for idx, text_item in zip(missing_indices, missing_texts):
+            results[idx] = translate_text(text_item, target_lang=tgt, source_lang=src)
+
+    return [r if r is not None else "" for r in results]
 
 
 def is_tamil(text: str) -> bool:

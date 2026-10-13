@@ -1,7 +1,7 @@
 import re
 import json
 from typing import Dict, Any, List, Optional, Tuple, Set
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, get_gemini_client, FAST_GEMINI_MODELS, is_gemini_available, mark_gemini_quota_exhausted
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -1264,10 +1264,11 @@ def generate_visual_explanation(
     source_ref_str = format_provenance_label(relevant_chunks[0])
 
     # 5. Attempt LLM Generation if Gemini API is available
-    if GEMINI_API_KEY:
+    if is_gemini_available():
         try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
+            client = get_gemini_client()
+            if not client:
+                raise ValueError("Gemini client unavailable")
 
             context_snippets = []
             for c in relevant_chunks[:6]:
@@ -1319,7 +1320,7 @@ Return strictly JSON with schema:
 }}
 """
             raw_text = ""
-            for model_cand in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+            for model_cand in FAST_GEMINI_MODELS:
                 try:
                     res = client.models.generate_content(
                         model=model_cand,

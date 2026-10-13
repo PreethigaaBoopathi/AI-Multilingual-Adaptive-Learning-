@@ -2,7 +2,7 @@ import json
 import re
 import math
 from typing import Dict, Any, List, Optional, Tuple, Set
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, get_gemini_client, FAST_GEMINI_MODELS, is_gemini_available, mark_gemini_quota_exhausted
 from services.translation_service import translate_text, is_tamil
 from database import (
     get_adaptive_concept_performance, 
@@ -318,8 +318,9 @@ def generate_level_tailored_explanation(
     # 1. Attempt LLM generation if GEMINI_API_KEY is available
     if GEMINI_API_KEY:
         try:
-            from google import genai
-            client = genai.Client(api_key=GEMINI_API_KEY)
+            client = get_gemini_client()
+            if not client:
+                raise ValueError("Gemini client unavailable")
             
             level_guidance = {
                 "beginner": (
@@ -378,7 +379,7 @@ Output in valid JSON format with these exact keys:
 }}
 """
             data = None
-            for model_cand in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+            for model_cand in FAST_GEMINI_MODELS:
                 try:
                     response = client.models.generate_content(
                         model=model_cand,

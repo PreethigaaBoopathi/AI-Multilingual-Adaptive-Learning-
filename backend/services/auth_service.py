@@ -19,7 +19,7 @@ def hash_password(plain_password: str) -> str:
     """Hashes a plain-text password securely using bcrypt with auto-generated salt."""
     if not plain_password:
         raise ValueError("Password cannot be empty")
-    salt = bcrypt.gensalt(rounds=12)
+    salt = bcrypt.gensalt(rounds=10)
     hashed_bytes = bcrypt.hashpw(plain_password.encode("utf-8"), salt)
     return hashed_bytes.decode("utf-8")
 
