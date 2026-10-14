@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   TrendingUp, Award, AlertTriangle, BookOpen, 
   ArrowRight, Clock, CheckCircle2, Sparkles, Upload, 
-  Layers, BarChart2, Network, Trash2
+  Layers, BarChart2, Network, Trash2, Hash,
+  ListFilter, AlignLeft, ChevronDown, ChevronUp, FileText
 } from 'lucide-react';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, 
@@ -13,14 +14,192 @@ import { useAuth } from '../context/AuthContext';
 import { useTextbook } from '../context/TextbookContext';
 import { useTheme } from '../context/ThemeContext';
 
+/**
+ * Intelligently cleans noisy topic strings, extracts PDF section & page numbers,
+ * and matches against the active textbook/summary structure.
+ */
+function processTopicMasteries(rawMasteries = [], activeTextbook = null) {
+  if (!rawMasteries || !Array.isArray(rawMasteries)) return [];
+
+  return rawMasteries.map((item, index) => {
+    const raw = (item.topic || '').trim();
+    const id = index + 1;
+    const numberLabel = `#${id}`;
+
+    // 1. Check if matches any chapter/section from the active textbook
+    let matchedSectionCode = null;
+    let matchedPage = null;
+
+    if (activeTextbook?.chapters && Array.isArray(activeTextbook.chapters)) {
+      for (const ch of activeTextbook.chapters) {
+        if (ch.title && raw.toLowerCase().includes(ch.title.toLowerCase())) {
+          if (ch.number != null) matchedSectionCode = `${ch.number}`;
+          if (ch.page_start) matchedPage = `P.${ch.page_start}`;
+        }
+        if (ch.sections && Array.isArray(ch.sections)) {
+          for (const sec of ch.sections) {
+            if (sec.title && (raw.toLowerCase().includes(sec.title.toLowerCase()) || sec.title.toLowerCase().includes(raw.toLowerCase()))) {
+              const secNumMatch = sec.title.match(/(?:sec(?:tion)?\s*|#)?(\d+(?:\.\d+)+|\b\d+\b)/i);
+              if (secNumMatch) matchedSectionCode = secNumMatch[1];
+              if (sec.page_start) matchedPage = `P.${sec.page_start}`;
+              break;
+            }
+          }
+        }
+        if (matchedSectionCode) break;
+      }
+    }
+
+    // 2. Extract section number from raw text if not yet matched
+    if (!matchedSectionCode) {
+      const multiSec = raw.match(/(?:sec(?:tion)?\s*|#)?(\d+(?:\.\d+)+)/i);
+      if (multiSec) {
+        matchedSectionCode = multiSec[1];
+      } else {
+        const singleSec = raw.match(/^(?:sec(?:tion)?\s*|#)?(\d+)(?:\s*[:.)-]|\s+[A-Z])/i);
+        if (singleSec) matchedSectionCode = singleSec[1];
+      }
+    }
+
+    // 3. Extract page number if present in raw
+    if (!matchedPage) {
+      const pageMatch = raw.match(/\b(?:Page|Pg|P\.?)\s*(\d+)\b/i);
+      if (pageMatch) matchedPage = `P.${pageMatch[1]}`;
+    }
+
+    // 4. Clean up title to remove boilerplate clutter and noise
+    let cleanTitle = raw;
+    cleanTitle = cleanTitle.replace(/^(?:which\s*&\s*|\band\s*|\b&\s*|[0-9]+\s*&\s*)/i, '');
+    cleanTitle = cleanTitle.replace(/^(?:does|why|how|what|is|are)\s+/i, '');
+    cleanTitle = cleanTitle.replace(/^(?:concept\s+)?relationships?\s*[(:]?\s*/i, '');
+    cleanTitle = cleanTitle.replace(/^\d+(?:\.\d+)*\s*[:.)-]?\s*/, '');
+    cleanTitle = cleanTitle.replace(/^(?:need\s+for|applications?\s+of)\s+/i, '');
+    
+    // Remove repetitive textbook noise phrases
+    cleanTitle = cleanTitle.replace(/\s+in\s+trie\s+data\s+structure\b/gi, '');
+    cleanTitle = cleanTitle.replace(/\s+of\s+trie\s+data\s+structure\b/gi, '');
+    cleanTitle = cleanTitle.replace(/\s+for\s+trie\s+data\s+structure\b/gi, '');
+    cleanTitle = cleanTitle.replace(/\s+in\s+trie\b/gi, '');
+    cleanTitle = cleanTitle.replace(/\btrie\s*&\s*/gi, '');
+    cleanTitle = cleanTitle.replace(/\s*&\s*trie\b/gi, '');
+    cleanTitle = cleanTitle.replace(/\bdata\s+structure\b/gi, '');
+    cleanTitle = cleanTitle.replace(/\s*\(page\s*\d+\)/gi, '');
+    cleanTitle = cleanTitle.replace(/[?)\],]+/g, '');
+    cleanTitle = cleanTitle.replace(/^[([,]+/g, '');
+    cleanTitle = cleanTitle.replace(/\s+/g, ' ').trim();
+
+    if (cleanTitle.length < 3) {
+      cleanTitle = raw.replace(/[()[\]?]/g, '').trim();
+    }
+
+    cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+
+    // Form short titles (max 15 chars)
+    const shortTitle = cleanTitle.length > 15 ? cleanTitle.slice(0, 14).trim() + '…' : cleanTitle;
+    const sectionBadge = matchedSectionCode ? `§${matchedSectionCode}` : (matchedPage ? matchedPage : numberLabel);
+
+    const pct = item.mastery_percentage != null ? item.mastery_percentage : 0;
+    const statusColor = pct >= 75 ? '#10b981' : pct >= 60 ? '#f59e0b' : '#ef4444';
+    const statusText = pct >= 75 ? 'Strong' : pct >= 60 ? 'Moderate' : 'Needs Review';
+
+    return {
+      ...item,
+      id,
+      indexNumber: id,
+      numberLabel,                    // e.g. "#1", "#2"
+      sectionBadge,                   // e.g. "§1.5.1", "P.2", "#3"
+      matchedSectionCode: matchedSectionCode ? `Sec ${matchedSectionCode}` : null,
+      matchedPage,                    // e.g. "P.2"
+      shortTitle,                     // e.g. "Insertion"
+      cleanTitle,                     // e.g. "Insertion"
+      fullTitle: raw,                 // original raw title
+      mastery_percentage: pct,
+      statusColor,
+      statusText
+    };
+  });
+}
+
+// Custom Tooltip component for Recharts
+const TopicCustomTooltip = ({ active, payload, isDark }) => {
+  if (!active || !payload || !payload.length) return null;
+  const data = payload[0].payload;
+  if (!data) return null;
+
+  return (
+    <div 
+      className={`p-3 rounded-xl shadow-xl border text-xs max-w-xs transition-all pointer-events-none z-50 ${
+        isDark ? 'bg-slate-900/95 border-slate-700 text-white' : 'bg-white/95 border-slate-200 text-slate-900'
+      } backdrop-blur-md`}
+    >
+      <div className="flex items-center justify-between space-x-2 border-b pb-2 mb-2 border-slate-100 dark:border-slate-800">
+        <span className="font-mono font-bold text-3xs px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+          {data.numberLabel} {data.matchedSectionCode ? `• ${data.matchedSectionCode}` : ''} {data.matchedPage ? `• ${data.matchedPage}` : ''}
+        </span>
+        <span 
+          className="text-3xs font-extrabold uppercase px-1.5 py-0.5 rounded text-white"
+          style={{ backgroundColor: data.statusColor }}
+        >
+          {data.statusText}
+        </span>
+      </div>
+
+      <div className="font-bold text-xs leading-snug mb-1 text-slate-800 dark:text-slate-100">
+        {data.cleanTitle || data.fullTitle}
+      </div>
+
+      {data.fullTitle !== data.cleanTitle && (
+        <div className="text-3xs text-slate-400 dark:text-slate-500 mb-2 truncate">
+          Full: {data.fullTitle}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between text-2xs pt-1.5 border-t border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-300">
+        <span className="font-medium">Mastery Score:</span>
+        <span className="font-mono font-bold text-sm" style={{ color: data.statusColor }}>
+          {data.mastery_percentage}%
+        </span>
+      </div>
+      {data.quizzes_taken != null && (
+        <div className="text-3xs text-slate-400 mt-1 flex justify-between">
+          <span>Drills Attempted:</span>
+          <span className="font-medium">{data.quizzes_taken} {data.quizzes_taken === 1 ? 'attempt' : 'attempts'}</span>
+        </div>
+      )}
+      <div className="mt-2 pt-1 text-3xs text-indigo-500 dark:text-indigo-400 font-semibold flex items-center space-x-1">
+        <span>Click bar to launch targeted revision</span>
+        <span>&rarr;</span>
+      </div>
+    </div>
+  );
+};
+
 export const DashboardPage = ({ onNavigateWorkspace, onNavigateUpload }) => {
   const { user } = useAuth();
-  const { textbooks, selectTextbook, setActiveTab, deleteTextbook, clearAllTextbooks } = useTextbook();
+  const { textbooks, activeTextbook, selectTextbook, setActiveTab, deleteTextbook, clearAllTextbooks } = useTextbook();
   const { isDark } = useTheme();
   const [performance, setPerformance] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [clearing, setClearing] = useState(false);
+
+  // View state for Topic Mastery Breakdown
+  const [labelMode, setLabelMode] = useState('numbers'); // 'numbers' | 'section' | 'short'
+  const [chartLayout, setChartLayout] = useState('column'); // 'column' | 'horizontal'
+  const [filterWeakOnly, setFilterWeakOnly] = useState(false);
+  const [showIndexList, setShowIndexList] = useState(true);
+  const [hoveredTopicId, setHoveredTopicId] = useState(null);
+
+  const processedMasteries = useMemo(() => {
+    return processTopicMasteries(performance?.topic_masteries || [], activeTextbook);
+  }, [performance?.topic_masteries, activeTextbook]);
+
+  const displayMasteries = useMemo(() => {
+    if (filterWeakOnly) {
+      return processedMasteries.filter(m => m.mastery_percentage < 60);
+    }
+    return processedMasteries;
+  }, [processedMasteries, filterWeakOnly]);
 
   const handleRemoveSpecific = async (e, tb) => {
     e.stopPropagation();
@@ -66,6 +245,13 @@ export const DashboardPage = ({ onNavigateWorkspace, onNavigateUpload }) => {
   }, [user]);
 
   const handleLaunchRevision = (weakTopic) => {
+    if (weakTopic && weakTopic !== 'All') {
+      try {
+        sessionStorage.setItem('target_revision_topic', weakTopic);
+      } catch (e) {
+        // ignore
+      }
+    }
     setActiveTab('adaptive');
     onNavigateWorkspace();
   };
@@ -249,58 +435,192 @@ export const DashboardPage = ({ onNavigateWorkspace, onNavigateUpload }) => {
 
           {/* Topic Mastery Bar Chart */}
           <div className="academic-card p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
               <div className="flex items-center space-x-2">
                 <BarChart2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <h3 className="font-bold text-slate-900 dark:text-white text-sm">Topic Mastery Breakdown</h3>
+                <span className="text-3xs px-2 py-0.5 rounded-full font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                  {displayMasteries.length} {displayMasteries.length === 1 ? 'topic' : 'topics'}
+                </span>
               </div>
-              <span className="text-3xs text-slate-400 dark:text-slate-500 font-medium">Updated after each AI quiz</span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Label Mode Switcher */}
+                <div className="inline-flex items-center p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-3xs font-semibold">
+                  <button
+                    onClick={() => setLabelMode('numbers')}
+                    title="Numbered Ticks (#1, #2...) - Zero Overlap"
+                    className={`px-2.5 py-1 rounded-md transition-all ${
+                      labelMode === 'numbers'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    # Numbered
+                  </button>
+                  <button
+                    onClick={() => setLabelMode('section')}
+                    title="PDF Section / Page Codes (Sec 1.5.1, P.2)"
+                    className={`px-2.5 py-1 rounded-md transition-all ${
+                      labelMode === 'section'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    § PDF Match
+                  </button>
+                  <button
+                    onClick={() => setLabelMode('short')}
+                    title="Short Reduced Titles"
+                    className={`px-2.5 py-1 rounded-md transition-all ${
+                      labelMode === 'short'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Short Titles
+                  </button>
+                </div>
+
+                {/* Chart Layout Switcher */}
+                <div className="inline-flex items-center p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-3xs font-semibold">
+                  <button
+                    onClick={() => setChartLayout('column')}
+                    title="Column View (Vertical Bars)"
+                    className={`p-1 rounded-md transition-all ${
+                      chartLayout === 'column'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <BarChart2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setChartLayout('horizontal')}
+                    title="Horizontal Bars (Expanded Row List)"
+                    className={`p-1 rounded-md transition-all ${
+                      chartLayout === 'horizontal'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <AlignLeft className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Filter Weak Topics Toggle */}
+                <button
+                  onClick={() => setFilterWeakOnly(!filterWeakOnly)}
+                  className={`px-2.5 py-1 rounded-lg text-3xs font-semibold border transition-all inline-flex items-center space-x-1 ${
+                    filterWeakOnly
+                      ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                  }`}
+                >
+                  <ListFilter className="w-3 h-3" />
+                  <span>{filterWeakOnly ? 'Showing Weak (<60%)' : 'Filter Weak'}</span>
+                </button>
+              </div>
             </div>
 
-            <div className="h-64 w-full">
-              {performance?.topic_masteries && performance.topic_masteries.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart 
-                    data={performance.topic_masteries}
-                    margin={{ top: 10, right: 10, left: -20, bottom: 20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#334155" : "#f1f5f9"} />
-                    <XAxis 
-                      dataKey="topic" 
-                      tick={{ fontSize: 9, fill: isDark ? '#94a3b8' : '#64748b' }} 
-                      interval={0}
-                      angle={-15}
-                      textAnchor="end"
-                    />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: isDark ? '#94a3b8' : '#64748b' }} />
-                    <Tooltip 
-                      formatter={(val) => [`${val}% Mastery`, 'Accuracy']}
-                      contentStyle={{ 
-                        backgroundColor: isDark ? '#0f172a' : '#1e293b', 
-                        borderColor: isDark ? '#334155' : '#475569',
-                        borderRadius: '8px', 
-                        color: '#fff', 
-                        fontSize: '11px' 
-                      }}
-                    />
-                    <Bar dataKey="mastery_percentage" radius={[4, 4, 0, 0]}>
-                      {performance.topic_masteries.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={entry.mastery_percentage >= 75 ? '#10b981' : entry.mastery_percentage >= 60 ? '#f59e0b' : '#ef4444'} 
+            <div className="w-full">
+              {displayMasteries && displayMasteries.length > 0 ? (
+                chartLayout === 'column' ? (
+                  <div className="h-64 sm:h-72 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart 
+                        data={displayMasteries}
+                        margin={{ 
+                          top: 15, 
+                          right: 15, 
+                          left: -20, 
+                          bottom: labelMode === 'short' ? 40 : 15 
+                        }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "#334155" : "#f1f5f9"} />
+                        <XAxis 
+                          dataKey={
+                            labelMode === 'numbers' ? 'numberLabel' : 
+                            labelMode === 'section' ? 'sectionBadge' : 'shortTitle'
+                          } 
+                          tick={{ 
+                            fontSize: labelMode === 'short' ? 9 : 10, 
+                            fill: isDark ? '#94a3b8' : '#64748b' 
+                          }} 
+                          interval={0}
+                          angle={labelMode === 'short' ? -25 : 0}
+                          textAnchor={labelMode === 'short' ? 'end' : 'middle'}
                         />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: isDark ? '#94a3b8' : '#64748b' }} unit="%" />
+                        <Tooltip content={<TopicCustomTooltip isDark={isDark} />} />
+                        <Bar 
+                          dataKey="mastery_percentage" 
+                          radius={[4, 4, 0, 0]}
+                          onClick={(data) => handleLaunchRevision(data.fullTitle)}
+                          className="cursor-pointer"
+                        >
+                          {displayMasteries.map((entry, index) => (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={entry.statusColor} 
+                              opacity={hoveredTopicId && hoveredTopicId !== entry.id ? 0.35 : 1}
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto custom-scrollbar pr-2">
+                    <div style={{ height: Math.max(260, displayMasteries.length * 36) }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart 
+                          data={displayMasteries}
+                          layout="vertical"
+                          margin={{ top: 10, right: 25, left: labelMode === 'numbers' ? 10 : 30, bottom: 10 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={isDark ? "#334155" : "#f1f5f9"} />
+                          <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: isDark ? '#94a3b8' : '#64748b' }} unit="%" />
+                          <YAxis 
+                            type="category"
+                            dataKey={labelMode === 'numbers' ? 'numberLabel' : 'cleanTitle'} 
+                            width={labelMode === 'numbers' ? 45 : 140}
+                            tick={{ fontSize: 9, fill: isDark ? '#94a3b8' : '#64748b' }}
+                          />
+                          <Tooltip content={<TopicCustomTooltip isDark={isDark} />} />
+                          <Bar 
+                            dataKey="mastery_percentage" 
+                            radius={[0, 4, 4, 0]}
+                            onClick={(data) => handleLaunchRevision(data.fullTitle)}
+                            className="cursor-pointer"
+                          >
+                            {displayMasteries.map((entry, index) => (
+                              <Cell 
+                                key={`hcell-${index}`} 
+                                fill={entry.statusColor}
+                                opacity={hoveredTopicId && hoveredTopicId !== entry.id ? 0.35 : 1}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )
               ) : (
-                <div className="h-full flex items-center justify-center text-xs text-slate-400 dark:text-slate-500">
-                  No quiz history yet. Take your first quiz in the workspace!
+                <div className="h-64 flex flex-col items-center justify-center text-xs text-slate-400 dark:text-slate-500 space-y-2">
+                  <FileText className="w-8 h-8 opacity-40 text-slate-400" />
+                  <span>
+                    {filterWeakOnly 
+                      ? 'No weak topics detected (<60%)! Great work maintaining high mastery.' 
+                      : 'No quiz history yet. Take your first quiz in the workspace!'}
+                  </span>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-center space-x-6 text-2xs text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+            {/* Legend Indicators */}
+            <div className="flex flex-wrap items-center justify-center gap-6 text-2xs text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
               <span className="flex items-center space-x-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
                 <span>Strong (&gt;75%)</span>
@@ -314,6 +634,83 @@ export const DashboardPage = ({ onNavigateWorkspace, onNavigateUpload }) => {
                 <span>Weak (&lt;60%)</span>
               </span>
             </div>
+
+            {/* Interactive PDF & Summary Topic Reference Index */}
+            {displayMasteries && displayMasteries.length > 0 && (
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center space-x-1.5">
+                      <Hash className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Textbook Section & Topic Index</span>
+                    </span>
+                    <span className="text-3xs text-slate-400">
+                      (Matches numbered chart bars to PDF sections & summary)
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setShowIndexList(!showIndexList)}
+                    className="text-3xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center space-x-1"
+                  >
+                    <span>{showIndexList ? 'Hide Index' : 'Show Full Index'}</span>
+                    {showIndexList ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                </div>
+
+                {showIndexList && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-56 overflow-y-auto custom-scrollbar p-1">
+                    {displayMasteries.map((item) => (
+                      <div
+                        key={item.id}
+                        onMouseEnter={() => setHoveredTopicId(item.id)}
+                        onMouseLeave={() => setHoveredTopicId(null)}
+                        onClick={() => handleLaunchRevision(item.fullTitle)}
+                        className={`group flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                          hoveredTopicId === item.id
+                            ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-700 shadow-xs'
+                            : 'bg-slate-50/70 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800/80 hover:border-indigo-300 dark:hover:border-indigo-800'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2 min-w-0 pr-2">
+                          <span 
+                            className="w-6 h-6 rounded-md font-mono font-bold text-3xs flex items-center justify-center shrink-0 text-white shadow-2xs"
+                            style={{ backgroundColor: item.statusColor }}
+                          >
+                            {item.numberLabel}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="font-semibold truncate text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                              {item.cleanTitle}
+                            </div>
+                            <div className="text-3xs text-slate-400 flex items-center space-x-1.5">
+                              {item.matchedSectionCode && <span>{item.matchedSectionCode}</span>}
+                              {item.matchedPage && <span>• {item.matchedPage}</span>}
+                              {!item.matchedSectionCode && !item.matchedPage && <span>Topic #{item.id}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <span 
+                            className="font-mono text-3xs font-bold px-1.5 py-0.5 rounded"
+                            style={{ 
+                              backgroundColor: item.mastery_percentage >= 75 ? '#ecfdf5' : item.mastery_percentage >= 60 ? '#fffbeb' : '#fef2f2',
+                              color: item.statusColor 
+                            }}
+                          >
+                            {item.mastery_percentage}%
+                          </span>
+                          <span className="text-3xs text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                            &rarr;
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Strong vs Weak Topics Lists */}

@@ -19,7 +19,14 @@ export const AdaptiveRevisionTab = ({ onRetakeQuiz }) => {
   const loadRecommendation = async () => {
     try {
       setLoading(true);
-      const data = await textbookAPI.getRecommendations('demo_user', null, language || 'en', activeTextbook?.id);
+      let targetTopic = null;
+      try {
+        targetTopic = sessionStorage.getItem('target_revision_topic');
+        sessionStorage.removeItem('target_revision_topic');
+      } catch (e) {
+        // ignore
+      }
+      const data = await textbookAPI.getRecommendations('demo_user', targetTopic, language || 'en', activeTextbook?.id);
       setRecommendation(data);
       setPracticeAnswers({});
       setPracticeSubmitted(false);

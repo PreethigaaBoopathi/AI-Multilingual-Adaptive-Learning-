@@ -63,6 +63,17 @@ def build_question_citation(chunk: Dict[str, Any]) -> Dict[str, Any]:
         "excerpt": excerpt
     }
 
+def sanitize_topic_title(raw: Optional[str]) -> str:
+    """Sanitize noisy raw topic/section headings by removing brackets, connectives, and boilerplate."""
+    if not raw:
+        return "General"
+    t = str(raw).strip()
+    t = re.sub(r"^(?:which\s*&\s*|\band\s*|\b&\s*|[0-9]+\s*&\s*)", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"[\?\)\]]+$", "", t).strip()
+    t = re.sub(r"^[\(\[]+", "", t).strip()
+    t = re.sub(r"\s+", " ", t).strip()
+    return t if t else "General"
+
 # -------------------------------------------------------------------------
 # DYNAMIC QUESTION GENERATION FROM MULTIMODAL CHUNKS
 # -------------------------------------------------------------------------
@@ -158,7 +169,8 @@ def generate_dynamic_assessment_questions(
         if not sentences:
             continue
 
-        c_topic = chunk.get("section_title") or chunk.get("chapter_title") or topic or "General"
+        raw_t = chunk.get("section_title") or chunk.get("chapter_title") or topic or "General"
+        c_topic = sanitize_topic_title(raw_t)
         citation = build_question_citation(chunk)
 
         # Match relevant concept node
@@ -558,7 +570,7 @@ def _build_dynamic_relationship_question(
         return {
             "id": f"q_rel_{int(datetime.now().timestamp() * 1000)}_{random.randint(100, 999)}",
             "course_id": chunk.get("textbook_id") or chunk.get("material_id") or "course_default",
-            "topic": f"Concept Relationships ({src} & {tgt})",
+            "topic": f"Relationships ({sanitize_topic_title(src)} & {sanitize_topic_title(tgt)})",
             "concept_name": tgt,
             "difficulty": difficulty,
             "question_type": "concept_relationship",
