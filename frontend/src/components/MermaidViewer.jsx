@@ -37,7 +37,17 @@ export function cleanMermaidCode(raw) {
     code = 'graph TD\n' + code;
   }
 
-  // 3. Process lines
+  // Special case: sequence diagrams have a distinct syntax (no graph subgraphs/brackets)
+  if (firstContentLine.startsWith('sequenceDiagram') || code.startsWith('sequenceDiagram')) {
+    const seqLines = code.split('\n').map(line => {
+      let l = line.replace(/\\mathcal/g, 'Math_').replace(/\\in/g, 'in').replace(/\\ge/g, '>=').replace(/\\le/g, '<=');
+      l = l.replace(/\\models/g, '|=').replace(/\\text/g, '').replace(/\\/g, '');
+      return l;
+    });
+    return seqLines.join('\n').trim();
+  }
+
+  // 3. Process lines for flowcharts, concept maps, hierarchies, etc.
   const lines = code.split('\n').map(line => {
     const trimmed = line.trim();
     if (!trimmed) return '';
@@ -96,6 +106,20 @@ export function generateRecoveryMermaid(raw) {
     return 'graph TD\n  Start["Course Concept Overview"] --> End["Analysis Complete"]';
   }
 
+  // 1. If it's a sequence diagram, recover as valid sequence
+  if (raw.includes('sequenceDiagram')) {
+    const msgMatches = [...raw.matchAll(/(?:actor|participant)\s+([A-Za-z0-9_-]+)/g)];
+    const actors = Array.from(new Set(msgMatches.map(m => m[1]))).slice(0, 4);
+    if (actors.length >= 2) {
+      let out = 'sequenceDiagram\n  autonumber\n';
+      actors.forEach(a => { out += `  participant ${a}\n`; });
+      out += `  ${actors[0]}->>${actors[1]}: 1. Request / Ingestion\n`;
+      out += `  ${actors[1]}->>${actors[actors.length - 1]}: 2. Execute Operation\n`;
+      out += `  ${actors[actors.length - 1]}-->>${actors[0]}: 3. Return Verified Results\n`;
+      return out;
+    }
+  }
+
   const matches = [...raw.matchAll(/\["([^"]+)"\]|\{"([^"]+)"\}|\[([^\]]+)\]/g)];
   const labels = matches
     .map(m => m[1] || m[2] || m[3])
@@ -119,7 +143,13 @@ export function generateRecoveryMermaid(raw) {
     return out;
   }
 
-  return 'graph TD\n  Start["Core Concept"] --> Step1["Structural Definition"] --> Step2["Operational Execution"]\n  style Start fill:#ecfdf5,stroke:#10b981\n  style Step1 fill:#eff6ff,stroke:#3b82f6\n  style Step2 fill:#fef3c7,stroke:#f59e0b';
+  // Fallback extracting words from raw if no brackets
+  const words = raw.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 3 && !['graph', 'flowchart', 'sequenceDiagram', 'participant', 'autonumber', 'style', 'classDef'].includes(w)).slice(0, 4);
+  const stepA = words[0] ? words[0].toUpperCase() + ' Ingestion' : 'Concept Overview';
+  const stepB = words[1] ? words[1].toUpperCase() + ' Processing' : 'Operational Traversal';
+  const stepC = words[2] ? words[2].toUpperCase() + ' Verification' : 'Verified Output';
+
+  return `graph TD\n  Start["${stepA}"] --> Step1["${stepB}"] --> Step2["${stepC}"]\n  style Start fill:#ecfdf5,stroke:#10b981\n  style Step1 fill:#eff6ff,stroke:#3b82f6\n  style Step2 fill:#fef3c7,stroke:#f59e0b`;
 }
 
 export const MermaidViewer = ({ 

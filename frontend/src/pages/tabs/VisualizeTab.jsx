@@ -110,7 +110,9 @@ export const VisualizeTab = () => {
       const data = await textbookAPI.visualize(
         activeTextbook.id,
         topic,
-        type
+        type,
+        'intermediate',
+        language || 'en'
       );
       setVisualData(data);
     } catch (err) {
@@ -124,7 +126,7 @@ export const VisualizeTab = () => {
     if (topic) {
       loadVisual(diagramType);
     }
-  }, [topic, diagramType, activeTextbook]);
+  }, [topic, diagramType, activeTextbook, language]);
 
   // Handle clicking on a diagram node/step to inspect
   const handleInspectNode = (step) => {
@@ -194,10 +196,11 @@ export const VisualizeTab = () => {
             <button
               key={dt.id}
               onClick={() => setDiagramType(dt.id)}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${isActive
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                isActive
                   ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-500'
                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-                }`}
+              }`}
             >
               <Icon className="w-3.5 h-3.5" />
               <span>{dt.label}</span>

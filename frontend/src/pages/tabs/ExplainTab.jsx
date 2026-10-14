@@ -31,6 +31,7 @@ export const ExplainTab = () => {
   const [availableTopics, setAvailableTopics] = useState([]);
   const [explanationData, setExplanationData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [visualLoading, setVisualLoading] = useState(false);
 
   // Interactive Practice State
   const [selectedOption, setSelectedOption] = useState('');
@@ -137,11 +138,48 @@ export const ExplainTab = () => {
     if (topic && activeTextbook) {
       loadExplanation(level, selectedFormat);
     }
-  }, [topic, level, selectedFormat, language, activeTextbook]);
+  }, [topic, level, language, activeTextbook]);
+
+  // Fast diagram format switcher without reloading entire text explanation
+  const handleFormatChange = async (newFormat) => {
+    setSelectedFormat(newFormat);
+    if (!activeTextbook || !topic) return;
+
+    if (!explanationData) {
+      loadExplanation(level, newFormat);
+      return;
+    }
+
+    try {
+      setVisualLoading(true);
+      const activeTier = explanationData.level || (level === 'auto' ? 'beginner' : level);
+      const res = await textbookAPI.visualize(
+        activeTextbook.id,
+        topic,
+        newFormat,
+        activeTier,
+        language || 'en'
+      );
+      setExplanationData(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          visual_format: res.detected_type || newFormat,
+          visual_representation: res
+        };
+      });
+    } catch (err) {
+      console.warn('Fast visual format switch failed, falling back to full pipeline:', err);
+      loadExplanation(level, newFormat);
+    } finally {
+      setVisualLoading(false);
+    }
+  };
 
   // Level Switcher Handler
   const handleLevelChange = (newLevel) => {
     setLevel(newLevel);
+    loadExplanation(newLevel, selectedFormat);
   };
 
   // Practice Question Submission Handler
@@ -495,12 +533,13 @@ export const ExplainTab = () => {
           return (
             <button
               key={fmt.id}
-              onClick={() => setSelectedFormat(fmt.id)}
+              onClick={() => handleFormatChange(fmt.id)}
+              disabled={visualLoading}
               className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center space-x-1 ${
                 isCurrentActive
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
-              }`}
+              } ${visualLoading ? 'opacity-70 cursor-wait' : ''}`}
             >
               <span>{fmt.icon}</span>
               <span>{getFormatLabel(fmt)}</span>
@@ -535,7 +574,15 @@ export const ExplainTab = () => {
 
           {/* Dynamic Visual Representation Area (Innovation 5 Integration) */}
           {explanationData.visual_representation?.mermaid_code && (
-            <div>
+            <div className="relative">
+              {visualLoading && (
+                <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xs rounded-xl z-20 flex flex-col items-center justify-center space-y-2">
+                  <div className="w-6 h-6 border-2 border-indigo-600 dark:border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                    {language === 'ta' ? 'காட்சி மாதிரி புதுப்பிக்கப்படுகிறது...' : 'Updating visual model...'}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between mb-1 px-1">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-500" />

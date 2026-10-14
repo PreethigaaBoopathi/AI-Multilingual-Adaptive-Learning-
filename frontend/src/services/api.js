@@ -133,11 +133,13 @@ export const textbookAPI = {
     });
     return res.data;
   },
-  visualize: async (textbookId, topic, diagramType = 'auto') => {
+  visualize: async (textbookId, topic, diagramType = 'auto', level = 'intermediate', language = 'en') => {
     const res = await api.post('/visualize', {
       textbook_id: textbookId,
       topic,
       diagram_type: diagramType,
+      level,
+      language,
     });
     return res.data;
   },
