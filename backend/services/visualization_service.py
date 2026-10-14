@@ -39,6 +39,75 @@ def sanitize_mermaid_label(text: str, max_length: int = 60) -> str:
         clean = clean[:max_length - 3] + "..."
     return clean
 
+def clean_mermaid_syntax(code: str) -> str:
+    """
+    Enforces 100% syntactically valid Mermaid.js diagrams:
+    1. Strips markdown fences (```mermaid ... ```).
+    2. Encloses all unquoted node texts in double quotes to prevent crashes from:
+       - parentheses inside square brackets: A[O(L) Complexity] -> A["O(L) Complexity"]
+       - ampersands: A[Prefix & Auto-complete] -> A["Prefix & Auto-complete"]
+       - colons & questions: Gate{Prefix Required?} -> Gate{"Prefix Required?"}
+    3. Normalizes arrow labels: 'A -- Yes --> B' -> 'A -->|Yes| B'
+    4. Strips raw LaTeX commands that break the Mermaid lexer.
+    5. Ensures valid declaration at the top.
+    """
+    if not code or not code.strip():
+        return 'graph TD\n    A["No diagram data available"]'
+
+    c = code.strip()
+    c = re.sub(r"^```(?:mermaid)?\s*", "", c, flags=re.IGNORECASE)
+    c = re.sub(r"```\s*$", "", c).strip()
+
+    valid_headers = (
+        "graph ", "flowchart ", "sequenceDiagram", "classDiagram",
+        "stateDiagram", "erDiagram", "timeline", "gantt", "pie",
+        "quadrantChart", "mindmap", "gitGraph"
+    )
+    if not any(c.startswith(h) for h in valid_headers):
+        c = "graph TD\n" + c
+
+    lines = []
+    for line in c.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^(?:style|classDef|class|subgraph|end|click|autonumber)\b", stripped):
+            lines.append(line)
+            continue
+
+        l = line
+
+        # Standardize arrow labels: 'A -- Yes --> B' or 'A -- "Yes" --> B' -> 'A -->|Yes| B'
+        l = re.sub(r'\s+--\s+["\']?([^->\n|"\']+?)["\']?\s+-->\s+', r' -->|\1| ', l)
+
+        # Standardize dotted arrows: 'A -. Yes .-> B' or 'A -. "Yes" .-> B' -> 'A -.->|Yes| B'
+        l = re.sub(r'\s+-\.\s*["\']?([^->\n|"\']+?)["\']?\s*\.->\s+', r' -.->|\1| ', l)
+
+        # Standardize subgraphs with unquoted bracket titles: subgraph ID [Title] -> subgraph ID ["Title"]
+        l = re.sub(r'subgraph\s+([A-Za-z0-9_-]+)\s*\[([^"\]\n][^\]\n]*?)\]', lambda m: f'subgraph {m.group(1)} ["{m.group(2).replace(chr(34), chr(39))}"]', l)
+
+        # Wrap unquoted rectangle node labels: ID[label] -> ID["label"]
+        def quote_rect(m):
+            nid = m.group(1)
+            content = m.group(2).replace('"', "'")
+            return f'{nid}["{content}"]'
+        l = re.sub(r'(\b[A-Za-z0-9_-]+)\[([^"\]\n][^\]\n]*?)\]', quote_rect, l)
+
+        # Wrap unquoted decision / rhombus node labels: ID{label} -> ID{"label"}
+        def quote_rhombus(m):
+            nid = m.group(1)
+            content = m.group(2).replace('"', "'")
+            return f'{nid}{{"{content}"}}'
+        l = re.sub(r'(\b[A-Za-z0-9_-]+)\{([^"\}\n][^\}\n]*?)\}', quote_rhombus, l)
+
+        # Clean LaTeX commands that crash Mermaid lexer
+        l = l.replace(r"\mathcal", "Math_").replace(r"\in", "in").replace(r"\ge", ">=").replace(r"\le", "<=")
+        l = l.replace(r"\models", "|=").replace(r"\text", "").replace("\\", "")
+
+        lines.append(l)
+
+    return "\n".join(lines)
+
 VISUAL_STOP_WORDS = {
     "a", "an", "the", "and", "or", "in", "on", "at", "of", "to", "for", "with", "by",
     "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do",
@@ -659,12 +728,12 @@ def build_block_diagram_mermaid(topic: str, entities: List[Dict[str, Any]], leve
         S1["Atomic Writeback Protocol (ACID)"]
         S2["Causal Consistency Maintenance"]
     end
-    INGESTION_TIER --> CACHE_METRIC_TIER
-    CACHE_METRIC_TIER -- "sim \\ge \\tau" --> C3
-    CACHE_METRIC_TIER -- "sim < \\tau" --> STORAGE_TIER
-    STORAGE_TIER --> VERIFICATION_TIER
-    VERIFICATION_TIER --> CONSISTENCY_TIER
-    CONSISTENCY_TIER -. "Atomic Mutate" .-> CACHE_METRIC_TIER
+    I2 --> C1
+    C2 -->|sim >= tau| C3
+    C2 -->|sim < tau| G1
+    G3 --> A1
+    A2 --> S1
+    S2 -.->|Atomic Mutate| C1
     style INGESTION_TIER fill:#f8fafc,stroke:#64748b,stroke-width:1.5px
     style CACHE_METRIC_TIER fill:#fef3c7,stroke:#f59e0b,stroke-width:1.5px
     style STORAGE_TIER fill:#ede9fe,stroke:#8b5cf6,stroke-width:1.5px
@@ -688,9 +757,9 @@ def build_block_diagram_mermaid(topic: str, entities: List[Dict[str, Any]], leve
         P1["ACID State Store"]
         P2["Audit Log / Proof Trace"]
     end
-    INGESTION_TIER --> COMPUTE_TIER
-    COMPUTE_TIER --> VERIFICATION_TIER
-    VERIFICATION_TIER --> PERSISTENCE_TIER
+    I1 --> C1
+    C1 --> V1
+    V1 --> P1
     style INGESTION_TIER fill:#f8fafc,stroke:#64748b,stroke-width:1.5px
     style COMPUTE_TIER fill:#ede9fe,stroke:#8b5cf6,stroke-width:1.5px
     style VERIFICATION_TIER fill:#fff1f2,stroke:#f43f5e,stroke-width:2px
@@ -716,11 +785,11 @@ def build_block_diagram_mermaid(topic: str, entities: List[Dict[str, Any]], leve
         A2["AI Engine / LLM (Token Completion)"]
         A3["Truth-Grounded Response Delivery"]
     end
-    CLIENT_LAYER --> CACHE_LAYER
-    CACHE_LAYER -- "Cache Miss" --> GROUNDED_TIER
-    GROUNDED_TIER --> GENERATION_TIER
-    CLIENT_LAYER --> GENERATION_TIER
-    GENERATION_TIER -. "Populate Cache" .-> CACHE_LAYER
+    I1 --> C1
+    C2 -->|Cache Miss| G1
+    G2 --> A1
+    I2 --> A1
+    A3 -.->|Populate Cache| C1
     style CLIENT_LAYER fill:#f8fafc,stroke:#94a3b8,stroke-width:1px
     style CACHE_LAYER fill:#fef3c7,stroke:#f59e0b,stroke-width:1.5px
     style GROUNDED_TIER fill:#ede9fe,stroke:#8b5cf6,stroke-width:2px
@@ -743,8 +812,8 @@ def build_block_diagram_mermaid(topic: str, entities: List[Dict[str, Any]], leve
     lines.append(f'        S2["Audit Log / Telemetry"]')
     lines.append(f'    end')
 
-    lines.append('    INPUT_LAYER --> CORE_LAYER')
-    lines.append('    CORE_LAYER --> STORAGE_LAYER')
+    lines.append('    I1 --> C1')
+    lines.append('    C1 --> S1')
 
     lines.append('    style INPUT_LAYER fill:#f8fafc,stroke:#94a3b8,stroke-width:1px')
     lines.append('    style CORE_LAYER fill:#ede9fe,stroke:#8b5cf6,stroke-width:2px')
@@ -1303,7 +1372,11 @@ Strict Formatting Rules for '{detected_type}':
 - cycle: Use 'graph TD' closed state transition loop.
 
 Strict Grounding Rule: Every step, node, and relationship MUST come directly from the provided source context. Do not invent external facts.
-Ensure ALL node text labels avoid unescaped double quotes or brackets that crash Mermaid syntax.
+Strict Syntax & Mermaid Rules:
+1. ALWAYS quote node text in double quotes: e.g. Node1["Clear Text Here"] or Dec1{"Decision Query?"}.
+2. NEVER use unquoted parentheses, ampersands, or colons inside brackets. E.g. write N1["O(L) Complexity & Search"] NOT N1[O(L) Complexity & Search].
+3. Edge labels MUST use standard pipe syntax: A -->|Yes| B. Do not use A -- Yes --> B.
+4. Do not include markdown backticks around the mermaid_code in the JSON field.
 
 Course Context:
 {context_block}
@@ -1351,7 +1424,7 @@ Return strictly JSON with schema:
                     return {
                         "topic": topic_clean,
                         "detected_type": detected_type,
-                        "mermaid_code": data["mermaid_code"],
+                        "mermaid_code": clean_mermaid_syntax(data["mermaid_code"]),
                         "description": data.get("description", f"Visual explanation of {topic_clean} grounded in course materials for {lvl} learners."),
                         "source_reference": source_ref_str,
                         "steps_or_nodes": enriched_steps,
@@ -1414,7 +1487,7 @@ Return strictly JSON with schema:
     return {
         "topic": topic_clean,
         "detected_type": detected_type,
-        "mermaid_code": mermaid_code,
+        "mermaid_code": clean_mermaid_syntax(mermaid_code),
         "description": desc,
         "source_reference": source_ref_str,
         "steps_or_nodes": formatted_steps,

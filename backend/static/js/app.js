@@ -44,7 +44,7 @@ function applyTheme(theme) {
   AppState.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('app_theme', theme);
-  
+
   const themeIcon = document.getElementById('theme-icon');
   if (themeIcon) {
     themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
@@ -279,7 +279,7 @@ async function updateTopicSelects() {
         if (node.topic) topicSet.add(node.topic.trim());
       });
     }
-  } catch (e) {}
+  } catch (e) { }
 
   if (topicSet.size === 0 && tb.title) {
     topicSet.add(tb.title.trim());
@@ -290,7 +290,7 @@ async function updateTopicSelects() {
   const quizSelect = document.getElementById('quiz-topic-select');
   if (quizSelect && topics.length > 0) {
     const curr = quizSelect.value;
-    quizSelect.innerHTML = `<option value="All">All Course Topics (Comprehensive)</option>` + 
+    quizSelect.innerHTML = `<option value="All">All Course Topics (Comprehensive)</option>` +
       topics.map(t => `<option value="${t}">${t}</option>`).join('');
     if (topics.includes(curr)) {
       quizSelect.value = curr;
@@ -441,7 +441,7 @@ async function loadConceptGraphTab(forceRegenerate = false) {
   container.innerHTML = `<div style="text-align: center; padding: 2.5rem;"><div class="spinner"></div><p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem">Loading course concept and prerequisite graph...</p></div>`;
 
   try {
-    const data = forceRegenerate 
+    const data = forceRegenerate
       ? await API.generateConceptGraph(AppState.activeTextbook.id)
       : await API.getConceptGraph(AppState.activeTextbook.id);
 
@@ -474,11 +474,11 @@ async function loadConceptGraphTab(forceRegenerate = false) {
       pathStrip.style.display = 'block';
       const stepsHtml = data.learning_paths[0].map((s, idx) => `
         <span style="display: inline-flex; align-items: center; gap: 0.3rem; background: var(--bg-card); padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid var(--border-color); cursor: pointer" onclick="inspectConceptByName('${s.replace(/'/g, "\\'")}')">
-          <span style="font-size: 0.65rem; background: rgba(16,185,129,0.2); color: var(--emerald-600); font-weight: 800; padding: 0.1rem 0.35rem; border-radius: 4px">${idx+1}</span>
+          <span style="font-size: 0.65rem; background: rgba(16,185,129,0.2); color: var(--emerald-600); font-weight: 800; padding: 0.1rem 0.35rem; border-radius: 4px">${idx + 1}</span>
           <span style="font-weight: 700; color: var(--text-main)">${s}</span>
         </span>
       `).join('<span style="color: var(--emerald-600); font-weight: 800"> → </span>');
-      
+
       pathStrip.innerHTML = `<span style="font-weight: 800; color: var(--emerald-600); margin-right: 0.5rem">🎯 Recommended Learning Path:</span> ${stepsHtml}`;
     }
 
@@ -488,7 +488,7 @@ async function loadConceptGraphTab(forceRegenerate = false) {
       const nodeEl = document.createElement('div');
       nodeEl.className = 'card';
       nodeEl.style.cssText = 'padding: 0.85rem 1rem; cursor: pointer; transition: all 0.2s; border-left: 4px solid var(--primary-600); display: flex; justify-content: space-between; align-items: center';
-      
+
       const hasPDF = node.sources?.some(s => s.source_type === 'pdf');
       const hasPPT = node.sources?.some(s => s.source_type === 'presentation');
       const hasVideo = node.sources?.some(s => s.source_type === 'video');
@@ -653,7 +653,7 @@ async function loadSummaryTab() {
         <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.6rem">
           ${data.key_concepts.map((c, i) => `
             <li class="concept-item">
-              <span class="concept-number">${i+1}</span>
+              <span class="concept-number">${i + 1}</span>
               <span style="line-height: 1.4">${c}</span>
             </li>
           `).join('')}
@@ -1214,7 +1214,7 @@ function setupUploadZone() {
       if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
         runUploadPipeline();
-        
+
         try {
           const formData = new FormData();
           formData.append('file', file);

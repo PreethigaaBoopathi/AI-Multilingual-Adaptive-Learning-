@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  GitBranch, Sparkles, Workflow, Network, 
+import {
+  GitBranch, Sparkles, Workflow, Network,
   RefreshCw, Columns, Compass, ShieldCheck,
   AlertTriangle, ArrowRight, BookOpen, Layers,
   HelpCircle, MessageSquare, Award, Clock,
@@ -19,7 +19,7 @@ export const VisualizeTab = () => {
   const [diagramType, setDiagramType] = useState('auto');
   const [visualData, setVisualData] = useState(null);
   const [loading, setLoading] = useState(false);
-  
+
   // Interactive Node Inspection state
   const [selectedNode, setSelectedNode] = useState(null);
   const [nodeExplanation, setNodeExplanation] = useState(null);
@@ -57,7 +57,7 @@ export const VisualizeTab = () => {
             if (node.topic) topicSet.add(node.topic.trim());
           });
         }
-      } catch (e) {}
+      } catch (e) { }
 
       if (topicSet.size === 0 && activeTextbook.title) {
         topicSet.add(activeTextbook.title.trim());
@@ -194,11 +194,10 @@ export const VisualizeTab = () => {
             <button
               key={dt.id}
               onClick={() => setDiagramType(dt.id)}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                isActive
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${isActive
                   ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-500'
                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-              }`}
+                }`}
             >
               <Icon className="w-3.5 h-3.5" />
               <span>{dt.label}</span>
@@ -217,7 +216,7 @@ export const VisualizeTab = () => {
         </div>
       ) : visualData ? (
         <div className="space-y-6 animate-fade-in">
-          
+
           {/* Insufficient Evidence Warning Banner */}
           {visualData.is_sufficient_evidence === false && (
             <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl space-y-2">
@@ -285,11 +284,10 @@ export const VisualizeTab = () => {
                       <div
                         key={idx}
                         onClick={() => handleInspectNode(step)}
-                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
-                          isSelected
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${isSelected
                             ? 'bg-indigo-50/90 dark:bg-indigo-950/70 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
                             : 'bg-slate-50/70 dark:bg-slate-800/60 hover:bg-indigo-50/40 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-1 mb-1">
                           <p className="font-bold text-slate-900 dark:text-slate-100 truncate">

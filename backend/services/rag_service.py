@@ -907,3 +907,8 @@ Course Material Excerpts:
         "course_id": course_id,
         "language": language
     }
+        "outside_knowledge_used": outside_knowledge_used,
+        "outside_knowledge_content": generate_outside_knowledge_answer(query_str) if outside_knowledge_used else None,
+        "course_id": course_id,
+        "language": language
+    }

@@ -775,3 +775,6 @@ def explain_learning_path_node(
         "related_concepts": [r["name"] for r in tutor_res.get("related_concepts", [])] if tutor_res.get("related_concepts") else [],
         "language": language
     }
+        "related_concepts": [r["name"] for r in tutor_res.get("related_concepts", [])] if tutor_res.get("related_concepts") else [],
+        "language": language
+    }

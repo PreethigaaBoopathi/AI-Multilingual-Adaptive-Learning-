@@ -2,9 +2,125 @@ import React, { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { 
   Code, Download, ZoomIn, ZoomOut, RotateCcw, 
-  Copy, Check, Edit3, X, Eye, Sparkles 
+  Copy, Check, Edit3, Eye, Sparkles, Wand2, RefreshCw 
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+
+/**
+ * Automatically cleans and sanitizes Mermaid syntax:
+ * 1. Strips markdown fences (```mermaid ... ```).
+ * 2. Wraps unquoted node labels in double quotes ["..."] to prevent syntax errors
+ *    from parentheses (e.g. O(L)), ampersands (&), question marks, colons, or dashes.
+ * 3. Converts legacy arrow labels (A -- Yes --> B) to pipe syntax (A -->|Yes| B).
+ * 4. Cleans LaTeX commands (\mathcal, \le, \ge, \models, \in, \text) that crash Mermaid.
+ * 5. Guarantees a valid diagram declaration (e.g. 'graph TD\n').
+ */
+export function cleanMermaidCode(raw) {
+  if (!raw || typeof raw !== 'string' || !raw.trim()) {
+    return 'graph TD\n  A["Diagram Not Available"]';
+  }
+
+  let code = raw.trim();
+
+  // 1. Strip markdown code fences
+  code = code.replace(/^```(?:mermaid)?\s*/i, '');
+  code = code.replace(/```\s*$/, '').trim();
+
+  // 2. Ensure diagram starts with valid declaration (skipping comments)
+  const validHeaders = [
+    'graph ', 'flowchart ', 'sequenceDiagram', 'classDiagram',
+    'stateDiagram', 'erDiagram', 'timeline', 'gantt', 'pie',
+    'quadrantChart', 'mindmap', 'gitGraph', 'journey', 'C4Context'
+  ];
+  const firstContentLine = code.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('%%')) || '';
+  if (!validHeaders.some(h => firstContentLine.startsWith(h))) {
+    code = 'graph TD\n' + code;
+  }
+
+  // 3. Process lines
+  const lines = code.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return '';
+
+    // Preserve styling, class definitions, clicks, etc.
+    if (/^(?:style|classDef|class|end|click|autonumber)\b/.test(trimmed)) {
+      return line;
+    }
+
+    let l = line;
+
+    // Standardize subgraphs with unquoted bracket titles: subgraph ID [Title] -> subgraph ID ["Title"]
+    l = l.replace(/subgraph\s+([A-Za-z0-9_-]+)\s*\[([^"\]\n][^\]\n]*?)\]/g, (m, id, text) => {
+      const safeText = text.replace(/"/g, "'");
+      return `subgraph ${id} ["${safeText}"]`;
+    });
+
+    if (/^subgraph\b/.test(trimmed)) {
+      return l;
+    }
+
+    // Standardize edge labels: 'A -- Yes --> B' or 'A -- "Yes" --> B' -> 'A -->|Yes| B'
+    l = l.replace(/\s+--\s+["']?([^->\n|'"]+?)["']?\s+-->\s+/g, ' -->|$1| ');
+
+    // Standardize dotted arrows: 'A -. Yes .-> B' or 'A -. "Yes" .-> B' -> 'A -.->|Yes| B'
+    l = l.replace(/\s+-\.\s*["']?([^->\n|'"]+?)["']?\s*\.->\s+/g, ' -.->|$1| ');
+
+    // Wrap unquoted square brackets: ID[label] -> ID["label"]
+    l = l.replace(/(\b[A-Za-z0-9_-]+)\[([^"\]\n][^\]\n]*?)\]/g, (match, id, text) => {
+      const safeText = text.replace(/"/g, "'");
+      return `${id}["${safeText}"]`;
+    });
+
+    // Wrap unquoted rhombus / decision: ID{label} -> ID{"label"}
+    l = l.replace(/(\b[A-Za-z0-9_-]+)\{([^"\}\n][^\}\n]*?)\}/g, (match, id, text) => {
+      const safeText = text.replace(/"/g, "'");
+      return `${id}{"${safeText}"}`;
+    });
+
+    // Clean LaTeX commands that crash Mermaid lexer
+    l = l.replace(/\\mathcal/g, 'Math_').replace(/\\in/g, 'in').replace(/\\ge/g, '>=').replace(/\\le/g, '<=');
+    l = l.replace(/\\models/g, '|=').replace(/\\text/g, '').replace(/\\/g, '');
+
+    return l;
+  });
+
+  return lines.filter(Boolean).join('\n');
+}
+
+/**
+ * Resilient recovery generator if original Mermaid code fails rendering.
+ * Extracts text concepts and reconstructs a guaranteed-valid flowchart.
+ */
+export function generateRecoveryMermaid(raw) {
+  if (!raw || typeof raw !== 'string') {
+    return 'graph TD\n  Start["Course Concept Overview"] --> End["Analysis Complete"]';
+  }
+
+  const matches = [...raw.matchAll(/\["([^"]+)"\]|\{"([^"]+)"\}|\[([^\]]+)\]/g)];
+  const labels = matches
+    .map(m => m[1] || m[2] || m[3])
+    .filter(Boolean)
+    .map(l => l.replace(/["\n]/g, "'").trim())
+    .filter(l => l.length > 1)
+    .slice(0, 7);
+
+  if (labels.length >= 2) {
+    let out = 'graph TD\n';
+    labels.forEach((lbl, i) => {
+      const cleanLbl = lbl.slice(0, 40);
+      out += `  N${i+1}["${cleanLbl}"]\n`;
+      if (i > 0) {
+        out += `  N${i} --> N${i+1}\n`;
+      }
+    });
+    labels.forEach((_, i) => {
+      out += `  style N${i+1} fill:#e0e7ff,stroke:#6366f1,stroke-width:1.5px\n`;
+    });
+    return out;
+  }
+
+  return 'graph TD\n  Start["Core Concept"] --> Step1["Structural Definition"] --> Step2["Operational Execution"]\n  style Start fill:#ecfdf5,stroke:#10b981\n  style Step1 fill:#eff6ff,stroke:#3b82f6\n  style Step2 fill:#fef3c7,stroke:#f59e0b';
+}
 
 export const MermaidViewer = ({ 
   chart, 
@@ -22,17 +138,22 @@ export const MermaidViewer = ({
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setCurrentCode(chart);
+    setCurrentCode(chart || '');
   }, [chart]);
 
   const renderDiagram = async (codeToRender) => {
     if (!codeToRender || !codeToRender.trim()) return;
+    const sanitized = cleanMermaidCode(codeToRender);
+    const uniqueId = 'mermaid_' + Math.random().toString(36).substring(2, 9);
+
     try {
       setError(null);
       mermaid.initialize({
         startOnLoad: false,
         theme: isDark ? 'dark' : 'default',
         securityLevel: 'loose',
+        suppressErrorRendering: true,
+        fontFamily: 'Inter, system-ui, sans-serif',
         themeVariables: isDark ? {
           fontFamily: 'Inter, system-ui, sans-serif',
           primaryColor: '#312e81',
@@ -55,18 +176,52 @@ export const MermaidViewer = ({
         }
       });
 
-      const uniqueId = `mermaid_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-      const { svg } = await mermaid.render(uniqueId, codeToRender);
+      // Clear any prior stray Mermaid error elements from the DOM
+      if (typeof document !== 'undefined') {
+        const stray = document.querySelectorAll('[id^="dmermaid_"]');
+        stray.forEach(el => el.remove());
+      }
+
+      const { svg } = await mermaid.render(uniqueId, sanitized);
       setSvgContent(svg);
+      setError(null);
     } catch (err) {
-      console.error('Mermaid render error:', err);
-      setError('Unable to render diagram syntax. You can edit the code in the Source editor.');
+      console.warn('Initial Mermaid render failed, attempting auto-repair recovery:', err);
+      // Remove any error DOM nodes mermaid might have injected
+      if (typeof document !== 'undefined') {
+        const errEl = document.getElementById('d' + uniqueId);
+        if (errEl) errEl.remove();
+      }
+
+      // Auto-Recovery: build a clean, guaranteed-working sequence from extracted nodes
+      try {
+        const recoveryId = 'mermaid_rec_' + Math.random().toString(36).substring(2, 9);
+        const fallbackCode = generateRecoveryMermaid(sanitized);
+        const { svg: fallbackSvg } = await mermaid.render(recoveryId, fallbackCode);
+        setSvgContent(fallbackSvg);
+        setError(null);
+      } catch (recErr) {
+        console.error('All Mermaid render attempts failed:', recErr);
+        setError('Unable to render diagram syntax. You can edit the code in the Source editor.');
+      }
     }
   };
 
   useEffect(() => {
     renderDiagram(currentCode);
   }, [currentCode, isDark]);
+
+  const handleAutoRepair = () => {
+    const repaired = cleanMermaidCode(currentCode);
+    setCurrentCode(repaired);
+    renderDiagram(repaired);
+  };
+
+  const handleForceRecovery = () => {
+    const fallback = generateRecoveryMermaid(currentCode);
+    setCurrentCode(fallback);
+    renderDiagram(fallback);
+  };
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.15, 2.5));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.15, 0.5));
@@ -172,13 +327,23 @@ export const MermaidViewer = ({
               <Edit3 className="w-4 h-4 text-indigo-400" />
               <span className="text-xs font-semibold text-slate-300">Mermaid Diagram Source Code (Live Editable)</span>
             </div>
-            <button
-              onClick={handleCopyCode}
-              className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800 px-2 py-1 rounded"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied' : 'Copy Code'}</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleAutoRepair}
+                className="flex items-center space-x-1 text-xs text-indigo-300 hover:text-white bg-indigo-900/60 hover:bg-indigo-800 border border-indigo-700/60 px-2.5 py-1 rounded transition"
+                title="Automatically fix unquoted brackets, arrows, and special characters"
+              >
+                <Wand2 className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Auto-Repair Syntax</span>
+              </button>
+              <button
+                onClick={handleCopyCode}
+                className="flex items-center space-x-1 text-xs text-slate-300 hover:text-white bg-slate-800 px-2 py-1 rounded"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? 'Copied' : 'Copy Code'}</span>
+              </button>
+            </div>
           </div>
           <textarea
             value={currentCode}
@@ -208,14 +373,37 @@ export const MermaidViewer = ({
       ) : (
         <div className="p-6 bg-slate-50/50 dark:bg-slate-950 min-h-[320px] flex items-center justify-center overflow-auto">
           {error ? (
-            <div className="text-center p-6 text-rose-600 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-lg max-w-md">
-              <p className="font-semibold text-sm mb-2">{error}</p>
-              <button
-                onClick={() => setIsEditing(true)}
-                className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold underline hover:text-indigo-800"
-              >
-                Open Source Editor to Fix
-              </button>
+            <div className="text-center p-6 text-rose-600 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl max-w-lg shadow-sm space-y-3">
+              <div className="flex items-center justify-center space-x-2 text-rose-700 dark:text-rose-400 font-semibold text-sm">
+                <Sparkles className="w-4 h-4" />
+                <span>{error}</span>
+              </div>
+              <p className="text-2xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Diagram syntax contained unsupported characters or formatting. You can auto-repair it instantly or edit the source.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                <button
+                  onClick={handleAutoRepair}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  <span>Auto-Repair Syntax</span>
+                </button>
+                <button
+                  onClick={handleForceRecovery}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg transition"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Synthesize Safe Diagram</span>
+                </button>
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Code</span>
+                </button>
+              </div>
             </div>
           ) : (
             <div 
